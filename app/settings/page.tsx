@@ -32,7 +32,7 @@ export default function SettingsPage() {
     // Tours state
     var [tours, setTours] = useState<Tour[]>([]);
     var [editingTour, setEditingTour] = useState<Tour | null>(null);
-    var [tourForm, setTourForm] = useState({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "" });
+    var [tourForm, setTourForm] = useState({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10" });
     var [tourSaving, setTourSaving] = useState(false);
     var [tourError, setTourError] = useState("");
 
@@ -135,9 +135,11 @@ export default function SettingsPage() {
         setTours((data || []) as Tour[]);
     }
 
+    var [dragIdx, setDragIdx] = useState<number | null>(null);
+
     function resetTourForm() {
         setEditingTour(null);
-        setTourForm({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "" });
+        setTourForm({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10" });
         setTourError("");
     }
 
@@ -151,6 +153,7 @@ export default function SettingsPage() {
             sort_order: String(t.sort_order || 0),
             active: t.active,
             image_url: t.image_url || "",
+            default_capacity: String((t as any).default_capacity || 10),
         });
         setTourError("");
     }
@@ -172,6 +175,7 @@ export default function SettingsPage() {
             sort_order: Number(tourForm.sort_order) || 0,
             active: tourForm.active,
             image_url: tourForm.image_url.trim() || null,
+            default_capacity: Number(tourForm.default_capacity) || 10,
         };
 
         if (editingTour) {
@@ -202,6 +206,18 @@ export default function SettingsPage() {
     async function handleToggleHidden(t: Tour) {
         await supabase.from("tours").update({ hidden: !t.hidden }).eq("id", t.id);
         fetchTours();
+    }
+
+    async function handleDrop(targetIdx: number) {
+        if (dragIdx === null || dragIdx === targetIdx) { setDragIdx(null); return; }
+        var reordered = [...tours];
+        var [moved] = reordered.splice(dragIdx, 1);
+        reordered.splice(targetIdx, 0, moved);
+        setTours(reordered);
+        setDragIdx(null);
+        for (var i = 0; i < reordered.length; i++) {
+            await supabase.from("tours").update({ sort_order: i }).eq("id", reordered[i].id);
+        }
     }
 
     async function handleDelete(id: string, adminRole: string) {
@@ -355,10 +371,18 @@ export default function SettingsPage() {
                         </div>
                         <div className="ui-surface rounded-2xl border border-[var(--ck-border-subtle)] overflow-hidden">
                             <div className="divide-y divide-[var(--ck-border-subtle)]">
-                                {tours.map(t => (
-                                    <div key={t.id} className={"p-4 cursor-pointer transition-colors " + (editingTour?.id === t.id ? "bg-blue-50" : "hover:bg-[var(--ck-bg)]")}
+                                {tours.map((t, idx) => (
+                                    <div key={t.id}
+                                        draggable
+                                        onDragStart={() => setDragIdx(idx)}
+                                        onDragOver={(e) => e.preventDefault()}
+                                        onDrop={() => handleDrop(idx)}
+                                        className={"p-4 cursor-pointer transition-colors " + (dragIdx === idx ? "opacity-40 " : "") + (editingTour?.id === t.id ? "bg-blue-50" : "hover:bg-[var(--ck-bg)]")}
                                         onClick={() => startEditTour(t)}>
                                         <div className="flex gap-3">
+                                            <div className="flex items-center shrink-0 cursor-grab active:cursor-grabbing text-[var(--ck-text-muted)] hover:text-[var(--ck-text-strong)]" title="Drag to reorder">
+                                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="5" cy="8" r="1.5"/><circle cx="11" cy="8" r="1.5"/><circle cx="5" cy="13" r="1.5"/><circle cx="11" cy="13" r="1.5"/></svg>
+                                            </div>
                                             {t.image_url && (
                                                 <img src={t.image_url} alt={t.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
                                             )}
@@ -375,7 +399,7 @@ export default function SettingsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-[var(--ck-text-muted)]">
-                                                    R{t.base_price_per_person || 0}/person · {t.duration_minutes || "—"} min · Order: {t.sort_order || 0}
+                                                    R{t.base_price_per_person || 0}/person · {t.duration_minutes || "—"} min
                                                 </div>
                                             </div>
                                         </div>
@@ -443,10 +467,11 @@ export default function SettingsPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Sort Order</label>
-                                    <input type="number" min="0" step="1" value={tourForm.sort_order}
-                                        onChange={e => setTourForm({ ...tourForm, sort_order: e.target.value })}
-                                        className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="0" />
+                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Default Capacity</label>
+                                    <input type="number" min="1" step="1" value={tourForm.default_capacity}
+                                        onChange={e => setTourForm({ ...tourForm, default_capacity: e.target.value })}
+                                        className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="10" />
+                                    <p className="text-xs text-[var(--ck-text-muted)] mt-1">Max people per slot</p>
                                 </div>
                                 <div className="flex items-end pb-1">
                                     <label className="flex items-center gap-2 cursor-pointer">
