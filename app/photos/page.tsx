@@ -75,7 +75,7 @@ export default function PhotosPage() {
         .select("id, customer_name, phone, email, status")
         .eq("business_id", businessId)
         .eq("slot_id", selectedSlot.id)
-        .in("status", ["confirmed", "completed"]);
+        .in("status", ["PAID", "CONFIRMED", "COMPLETED"]);
 
       var sent = 0;
       for (var b of (bookings || [])) {
@@ -92,7 +92,7 @@ export default function PhotosPage() {
               headers: { "Content-Type": "application/json", Authorization: "Bearer " + SK },
               body: JSON.stringify({ to: b.phone, message: waMsg }),
             });
-          } catch {}
+          } catch { }
         }
 
         // Send thank-you email with photo link
@@ -111,7 +111,7 @@ export default function PhotosPage() {
                 },
               }),
             });
-          } catch {}
+          } catch { }
         }
         sent++;
       }

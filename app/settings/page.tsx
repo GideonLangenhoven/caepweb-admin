@@ -2,6 +2,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { useBusinessContext } from "../../components/BusinessContext";
+import RichTextEditor from "../../components/RichTextEditor";
+import { fetchUsageSnapshot, type UsageSnapshot } from "../lib/billing";
 
 var BOOKING_URL = "https://capekayak-booking-sk1r.vercel.app";
 
@@ -32,9 +34,12 @@ export default function SettingsPage() {
     // Tours state
     var [tours, setTours] = useState<Tour[]>([]);
     var [editingTour, setEditingTour] = useState<Tour | null>(null);
-    var [tourForm, setTourForm] = useState({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10" });
+    var [tourForm, setTourForm] = useState({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10", slotStartDate: "", slotEndDate: "", slotTimes: [""] as string[], slotDays: [0, 1, 2, 3, 4, 5, 6] as number[] });
     var [tourSaving, setTourSaving] = useState(false);
     var [tourError, setTourError] = useState("");
+    var [slotMessage, setSlotMessage] = useState("");
+    var [slotGenerating, setSlotGenerating] = useState(false);
+    var [tourSlotCounts, setTourSlotCounts] = useState<Record<string, number>>({});
 
     // Site Settings State
     var [siteSettings, setSiteSettings] = useState({
@@ -45,10 +50,19 @@ export default function SettingsPage() {
         color_main: "#0f5dd7",
         color_secondary: "#101828",
         color_cta: "#0c8a59",
-        chatbot_avatar: "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie"
+        color_bg: "#f5f5f5",
+        color_nav: "#ffffff",
+        chatbot_avatar: "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie",
+        hero_eyebrow: "",
+        hero_title: "",
+        hero_subtitle: "",
+        business_name: "",
+        business_tagline: "",
+        logo_url: ""
     });
     var [siteSaving, setSiteSaving] = useState(false);
     var [siteMessage, setSiteMessage] = useState({ type: "", text: "" });
+    var [usageSnapshot, setUsageSnapshot] = useState<UsageSnapshot | null>(null);
 
     useEffect(() => {
         var r = localStorage.getItem("ck_admin_role");
@@ -57,6 +71,7 @@ export default function SettingsPage() {
             fetchAdmins();
             fetchTours();
             fetchSiteSettings();
+            fetchPlanUsage();
         } else {
             setLoading(false);
         }
@@ -68,13 +83,23 @@ export default function SettingsPage() {
             script.type = "module";
             document.head.appendChild(script);
         }
-    }, []);
+    }, [businessId]);
 
     async function fetchAdmins() {
         setLoading(true);
         var { data, error } = await supabase.from("admin_users").select("id, email, role, created_at").eq("business_id", businessId).order("created_at");
         if (data) setAdmins(data);
         setLoading(false);
+    }
+
+    async function fetchPlanUsage() {
+        try {
+            var usage = await fetchUsageSnapshot(businessId);
+            setUsageSnapshot(usage);
+        } catch (e) {
+            console.error("Failed to load plan usage:", e);
+            setUsageSnapshot(null);
+        }
     }
 
     async function sha256(str: string) {
@@ -85,7 +110,8 @@ export default function SettingsPage() {
     async function handleAddAdmin(e: React.FormEvent) {
         e.preventDefault();
         if (!newEmail || !newPass) return setError("Email and Password required");
-        if (admins.length >= 10) return setError("Maximum of 10 admins allowed");
+        var seatLimit = usageSnapshot?.seat_limit || 10;
+        if (admins.length >= seatLimit) return setError("Admin seat limit reached for your current plan (" + seatLimit + "). Upgrade to add more admins.");
 
         setAdding(true);
         setError("");
@@ -128,18 +154,32 @@ export default function SettingsPage() {
         setNewEmail("");
         setNewPass("");
         fetchAdmins();
+        fetchPlanUsage();
     }
 
     async function fetchTours() {
         var { data } = await supabase.from("tours").select("*").eq("business_id", businessId).order("sort_order", { ascending: true });
         setTours((data || []) as Tour[]);
+        if (data && data.length > 0) {
+            fetchSlotCounts(data.map((t: any) => t.id));
+        }
+    }
+
+    async function fetchSlotCounts(tourIds: string[]) {
+        var now = new Date().toISOString();
+        var counts: Record<string, number> = {};
+        for (var tid of tourIds) {
+            var { count } = await supabase.from("slots").select("id", { count: "exact", head: true }).eq("tour_id", tid).eq("status", "OPEN").gte("start_time", now);
+            counts[tid] = count || 0;
+        }
+        setTourSlotCounts(counts);
     }
 
     var [dragIdx, setDragIdx] = useState<number | null>(null);
 
     function resetTourForm() {
         setEditingTour(null);
-        setTourForm({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10" });
+        setTourForm({ name: "", description: "", price: "", duration: "", sort_order: "0", active: true, image_url: "", default_capacity: "10", slotStartDate: "", slotEndDate: "", slotTimes: [""], slotDays: [0, 1, 2, 3, 4, 5, 6] });
         setTourError("");
     }
 
@@ -154,8 +194,87 @@ export default function SettingsPage() {
             active: t.active,
             image_url: t.image_url || "",
             default_capacity: String((t as any).default_capacity || 10),
+            slotStartDate: "",
+            slotEndDate: "",
+            slotTimes: [""],
+            slotDays: [0, 1, 2, 3, 4, 5, 6],
         });
         setTourError("");
+    }
+
+    var DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    function toggleDay(day: number) {
+        setTourForm(prev => {
+            var days = prev.slotDays.includes(day) ? prev.slotDays.filter(d => d !== day) : [...prev.slotDays, day];
+            return { ...prev, slotDays: days };
+        });
+    }
+
+    async function generateSlotsForTour(tourId: string) {
+        var validTimes = tourForm.slotTimes.filter(t => t.trim() !== "");
+        if (!tourForm.slotStartDate || !tourForm.slotEndDate || validTimes.length === 0) {
+            setTourError("Please fill in start date, end date, and at least one start time.");
+            return 0;
+        }
+        if (tourForm.slotDays.length === 0) {
+            setTourError("Please select at least one day of the week.");
+            return 0;
+        }
+
+        var slots: any[] = [];
+        var start = new Date(tourForm.slotStartDate + "T00:00:00");
+        var end = new Date(tourForm.slotEndDate + "T00:00:00");
+        var capacity = Number(tourForm.default_capacity) || 10;
+
+        for (var d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            if (!tourForm.slotDays.includes(d.getDay())) continue;
+
+            var localDateStr = d.toISOString().split("T")[0];
+
+            for (var ti = 0; ti < validTimes.length; ti++) {
+                var localDateTime = localDateStr + "T" + validTimes[ti] + ":00";
+                var localDate = new Date(localDateTime);
+                localDate.setHours(localDate.getHours() - 2);
+                var utcStart = localDate.toISOString();
+
+                slots.push({
+                    business_id: businessId,
+                    tour_id: tourId,
+                    start_time: utcStart,
+                    capacity_total: capacity,
+                    booked: 0,
+                    held: 0,
+                    status: "OPEN",
+                });
+            }
+        }
+
+        if (slots.length === 0) {
+            setTourError("No slots to create — no matching days in the selected date range.");
+            return 0;
+        }
+
+        var { error: slotErr } = await supabase.from("slots").insert(slots);
+        if (slotErr) {
+            setTourError("Slots failed: " + slotErr.message);
+            return 0;
+        }
+        return slots.length;
+    }
+
+    async function handleGenerateSlots() {
+        if (!editingTour) return;
+        setSlotGenerating(true);
+        setTourError("");
+        setSlotMessage("");
+        var count = await generateSlotsForTour(editingTour.id);
+        if (count > 0) {
+            setSlotMessage(count + " slot" + (count !== 1 ? "s" : "") + " generated for " + editingTour.name + "!");
+            setTimeout(() => setSlotMessage(""), 5000);
+            fetchSlotCounts(tours.map(t => t.id));
+        }
+        setSlotGenerating(false);
     }
 
     async function handleSaveTour(e: React.FormEvent) {
@@ -182,8 +301,17 @@ export default function SettingsPage() {
             var { error: upErr } = await supabase.from("tours").update(payload).eq("id", editingTour.id);
             if (upErr) { setTourError("Failed: " + upErr.message); setTourSaving(false); return; }
         } else {
-            var { error: inErr } = await supabase.from("tours").insert({ ...payload, business_id: businessId });
+            var { data: newTour, error: inErr } = await supabase.from("tours").insert({ ...payload, business_id: businessId }).select().single();
             if (inErr) { setTourError("Failed: " + inErr.message); setTourSaving(false); return; }
+
+            // Auto-generate slots if date range and time are provided
+            if (newTour && tourForm.slotStartDate && tourForm.slotEndDate && tourForm.slotTimes.some(t => t.trim() !== "")) {
+                var count = await generateSlotsForTour(newTour.id);
+                if (count > 0) {
+                    setSlotMessage("Tour created with " + count + " slot" + (count !== 1 ? "s" : "") + " generated!");
+                    setTimeout(() => setSlotMessage(""), 5000);
+                }
+            }
         }
 
         setTourSaving(false);
@@ -226,6 +354,7 @@ export default function SettingsPage() {
 
         await supabase.from("admin_users").delete().eq("id", id);
         fetchAdmins();
+        fetchPlanUsage();
     }
 
     async function fetchSiteSettings() {
@@ -239,7 +368,15 @@ export default function SettingsPage() {
                 color_main: data.color_main || "#0f5dd7",
                 color_secondary: data.color_secondary || "#101828",
                 color_cta: data.color_cta || "#0c8a59",
-                chatbot_avatar: data.chatbot_avatar || "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie"
+                color_bg: data.color_bg || "#f5f5f5",
+                color_nav: data.color_nav || "#ffffff",
+                chatbot_avatar: data.chatbot_avatar || "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie",
+                hero_eyebrow: data.hero_eyebrow || "",
+                hero_title: data.hero_title || "",
+                hero_subtitle: data.hero_subtitle || "",
+                business_name: data.business_name || "",
+                business_tagline: data.business_tagline || "",
+                logo_url: data.logo_url || ""
             });
         }
     }
@@ -265,7 +402,15 @@ export default function SettingsPage() {
             color_main: siteSettings.color_main,
             color_secondary: siteSettings.color_secondary,
             color_cta: siteSettings.color_cta,
-            chatbot_avatar: siteSettings.chatbot_avatar
+            color_bg: siteSettings.color_bg,
+            color_nav: siteSettings.color_nav,
+            chatbot_avatar: siteSettings.chatbot_avatar,
+            hero_eyebrow: siteSettings.hero_eyebrow || null,
+            hero_title: siteSettings.hero_title || null,
+            hero_subtitle: siteSettings.hero_subtitle || null,
+            business_name: siteSettings.business_name || null,
+            business_tagline: siteSettings.business_tagline || null,
+            logo_url: siteSettings.logo_url || null
         }).eq("id", biz.id);
 
         if (error) {
@@ -301,7 +446,7 @@ export default function SettingsPage() {
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-lg font-semibold text-[var(--ck-text-strong)]">Admin Users</h2>
                         <span className="text-xs font-medium px-2 py-1 rounded-full bg-[var(--ck-bg-subtle)] text-[var(--ck-text-muted)]">
-                            {admins.length} / 10
+                            {admins.length} / {usageSnapshot?.seat_limit || 10}
                         </span>
                     </div>
 
@@ -331,9 +476,9 @@ export default function SettingsPage() {
                 <div>
                     <h2 className="text-lg font-semibold text-[var(--ck-text-strong)] mb-4">Add New Admin</h2>
                     <form onSubmit={handleAddAdmin} className="ui-surface rounded-2xl border border-[var(--ck-border-subtle)] p-5 space-y-4">
-                        {admins.length >= 10 ? (
+                        {admins.length >= (usageSnapshot?.seat_limit || 10) ? (
                             <div className="p-3 rounded-xl bg-orange-50 border border-orange-200 text-orange-800 text-sm">
-                                You have reached the maximum limit of 10 admin users.
+                                You have reached the admin seat limit for your plan ({usageSnapshot?.seat_limit || 10}).
                             </div>
                         ) : (
                             <>
@@ -381,7 +526,7 @@ export default function SettingsPage() {
                                         onClick={() => startEditTour(t)}>
                                         <div className="flex gap-3">
                                             <div className="flex items-center shrink-0 cursor-grab active:cursor-grabbing text-[var(--ck-text-muted)] hover:text-[var(--ck-text-strong)]" title="Drag to reorder">
-                                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.5"/><circle cx="11" cy="3" r="1.5"/><circle cx="5" cy="8" r="1.5"/><circle cx="11" cy="8" r="1.5"/><circle cx="5" cy="13" r="1.5"/><circle cx="11" cy="13" r="1.5"/></svg>
+                                                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="5" cy="3" r="1.5" /><circle cx="11" cy="3" r="1.5" /><circle cx="5" cy="8" r="1.5" /><circle cx="11" cy="8" r="1.5" /><circle cx="5" cy="13" r="1.5" /><circle cx="11" cy="13" r="1.5" /></svg>
                                             </div>
                                             {t.image_url && (
                                                 <img src={t.image_url} alt={t.name} className="w-14 h-14 rounded-lg object-cover shrink-0" />
@@ -399,7 +544,7 @@ export default function SettingsPage() {
                                                     </div>
                                                 </div>
                                                 <div className="text-xs text-[var(--ck-text-muted)]">
-                                                    R{t.base_price_per_person || 0}/person · {t.duration_minutes || "—"} min
+                                                    R{t.base_price_per_person || 0}/person · {t.duration_minutes || "—"} min · <span className={tourSlotCounts[t.id] ? "text-emerald-600" : "text-orange-500"}>{tourSlotCounts[t.id] ?? "…"} upcoming slot{tourSlotCounts[t.id] !== 1 ? "s" : ""}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -443,10 +588,10 @@ export default function SettingsPage() {
                                     placeholder="Describe this activity..." />
                             </div>
                             <div>
-                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Image URL</label>
+                                <label className="block text-xs font-medium text-[var(--ck-text-strong)] mb-1">Image URL</label>
                                 <input type="url" value={tourForm.image_url} onChange={e => setTourForm({ ...tourForm, image_url: e.target.value })}
-                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="https://i.ibb.co/..." />
-                                <p className="text-xs text-[var(--ck-text-muted)] mt-1">Upload your image at <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer" className="text-[var(--ck-accent)] hover:underline">imgbb.com</a> and paste the direct link here.</p>
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Paste any image URL here..." />
+                                <p className="text-xs text-[var(--ck-text-muted)] mt-1">Paste any direct image link here, or upload your image at <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer" className="text-[var(--ck-accent)] hover:underline">imgbb.com</a> if you don't have a link.</p>
                                 {tourForm.image_url && (
                                     <img src={tourForm.image_url} alt="Preview" className="mt-2 w-full max-w-[160px] aspect-square object-cover rounded-lg border border-[var(--ck-border-subtle)]" />
                                 )}
@@ -482,7 +627,74 @@ export default function SettingsPage() {
                                 </div>
                             </div>
 
+                            {/* Slot Generation */}
+                            <div className="border-t border-[var(--ck-border-subtle)] pt-4">
+                                <label className="block text-xs font-semibold text-[var(--ck-text-strong)] mb-1">
+                                    {editingTour ? "Generate Slots" : "Auto-generate Slots (optional)"}
+                                </label>
+                                {editingTour && (
+                                    <p className="text-xs text-emerald-600 font-medium mb-2">{tourSlotCounts[editingTour.id] ?? 0} upcoming open slots</p>
+                                )}
+                                <p className="text-xs text-[var(--ck-text-muted)] mb-3">Creates one slot per selected day in the date range. Edit individual slots on the Slots page.</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Start Date</label>
+                                        <input type="date" value={tourForm.slotStartDate} onChange={e => setTourForm({ ...tourForm, slotStartDate: e.target.value })}
+                                            className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">End Date</label>
+                                        <input type="date" value={tourForm.slotEndDate} onChange={e => setTourForm({ ...tourForm, slotEndDate: e.target.value })}
+                                            min={tourForm.slotStartDate || undefined}
+                                            className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" />
+                                    </div>
+                                </div>
+                                <div className="mt-3">
+                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Start Time{tourForm.slotTimes.length > 1 ? "s" : ""} (SAST)</label>
+                                    <div className="space-y-2">
+                                        {tourForm.slotTimes.map((t, idx) => (
+                                            <div key={idx} className="flex gap-2 items-center">
+                                                <input type="time" value={t} onChange={e => { var times = [...tourForm.slotTimes]; times[idx] = e.target.value; setTourForm({ ...tourForm, slotTimes: times }); }}
+                                                    className="ui-control flex-1 px-3 py-2 text-sm rounded-lg outline-none" />
+                                                {tourForm.slotTimes.length > 1 && (
+                                                    <button type="button" onClick={() => { var times = tourForm.slotTimes.filter((_, i) => i !== idx); setTourForm({ ...tourForm, slotTimes: times }); }}
+                                                        className="text-[var(--ck-danger)] hover:bg-red-50 rounded-lg p-1.5" title="Remove time">
+                                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <button type="button" onClick={() => setTourForm({ ...tourForm, slotTimes: [...tourForm.slotTimes, ""] })}
+                                        className="mt-1.5 text-xs font-medium text-[var(--ck-accent)] hover:underline">+ Add another time slot</button>
+                                </div>
+                                <div className="mt-3">
+                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Days of the Week</label>
+                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                        {DAY_LABELS.map((label, idx) => (
+                                            <button key={idx} type="button" onClick={() => toggleDay(idx)}
+                                                className={"px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors " + (tourForm.slotDays.includes(idx) ? "bg-[var(--ck-text-strong)] text-[var(--ck-surface)] border-[var(--ck-text-strong)]" : "bg-white text-[var(--ck-text-muted)] border-[var(--ck-border-subtle)] hover:border-[var(--ck-text-muted)]")}>
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2 mt-1.5">
+                                        <button type="button" onClick={() => setTourForm(prev => ({ ...prev, slotDays: [0, 1, 2, 3, 4, 5, 6] }))} className="text-[10px] text-[var(--ck-accent)] hover:underline">All</button>
+                                        <button type="button" onClick={() => setTourForm(prev => ({ ...prev, slotDays: [1, 2, 3, 4, 5] }))} className="text-[10px] text-[var(--ck-accent)] hover:underline">Weekdays</button>
+                                        <button type="button" onClick={() => setTourForm(prev => ({ ...prev, slotDays: [0, 6] }))} className="text-[10px] text-[var(--ck-accent)] hover:underline">Weekends</button>
+                                        <button type="button" onClick={() => setTourForm(prev => ({ ...prev, slotDays: [] }))} className="text-[10px] text-[var(--ck-text-muted)] hover:underline">None</button>
+                                    </div>
+                                </div>
+                                {editingTour && (
+                                    <button type="button" onClick={handleGenerateSlots} disabled={slotGenerating || !tourForm.slotStartDate || !tourForm.slotEndDate || !tourForm.slotTimes.some(t => t.trim() !== "") || tourForm.slotDays.length === 0}
+                                        className="mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+                                        {slotGenerating ? "Generating..." : "Generate Slots for " + editingTour.name}
+                                    </button>
+                                )}
+                            </div>
+
                             {tourError && <div className="text-xs text-[var(--ck-danger)] font-medium">{tourError}</div>}
+                            {slotMessage && <div className="text-xs text-[var(--ck-success)] font-medium">{slotMessage}</div>}
 
                             <div className="flex gap-3">
                                 <button type="submit" disabled={tourSaving}
@@ -519,25 +731,60 @@ export default function SettingsPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div>
                                 <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Directions &amp; Meeting Info</label>
-                                <textarea value={siteSettings.directions} onChange={e => setSiteSettings({ ...siteSettings, directions: e.target.value })}
-                                    rows={10} className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none resize-y"
-                                    placeholder="Enter how to find the location..." />
+                                <RichTextEditor value={siteSettings.directions} onChange={v => setSiteSettings({ ...siteSettings, directions: v })} rows={10} placeholder="Enter how to find the location..." />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Terms &amp; Conditions</label>
-                                <textarea value={siteSettings.terms_conditions} onChange={e => setSiteSettings({ ...siteSettings, terms_conditions: e.target.value })}
-                                    rows={10} className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none resize-y"
-                                    placeholder="Enter T&C's..." />
+                                <RichTextEditor value={siteSettings.terms_conditions} onChange={v => setSiteSettings({ ...siteSettings, terms_conditions: v })} rows={10} placeholder="Enter T&C's..." />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Privacy Policy</label>
-                                <textarea value={siteSettings.privacy_policy} onChange={e => setSiteSettings({ ...siteSettings, privacy_policy: e.target.value })}
-                                    rows={10} className="ui-control w-full px-3 py-2 text-xs text-gray-600 rounded-lg outline-none resize-y" />
+                                <RichTextEditor value={siteSettings.privacy_policy} onChange={v => setSiteSettings({ ...siteSettings, privacy_policy: v })} rows={10} />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Cookies Policy</label>
-                                <textarea value={siteSettings.cookies_policy} onChange={e => setSiteSettings({ ...siteSettings, cookies_policy: e.target.value })}
-                                    rows={10} className="ui-control w-full px-3 py-2 text-xs text-gray-600 rounded-lg outline-none resize-y" />
+                                <RichTextEditor value={siteSettings.cookies_policy} onChange={v => setSiteSettings({ ...siteSettings, cookies_policy: v })} rows={10} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Branding & Hero Text */}
+                    <div>
+                        <h3 className="text-sm font-semibold text-[var(--ck-text-strong)] mb-4 pb-2 border-b border-[var(--ck-border-subtle)]">Branding &amp; Hero Text</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Business Name</label>
+                                <input type="text" value={siteSettings.business_name} onChange={e => setSiteSettings({ ...siteSettings, business_name: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Cape Kayak Adventures" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Business Tagline</label>
+                                <input type="text" value={siteSettings.business_tagline} onChange={e => setSiteSettings({ ...siteSettings, business_tagline: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Cape Town's Original Since 1994" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Logo URL</label>
+                                <input type="url" value={siteSettings.logo_url} onChange={e => setSiteSettings({ ...siteSettings, logo_url: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="https://i.ibb.co/your-logo.png" />
+                                <p className="text-xs text-[var(--ck-text-muted)] mt-1">Leave empty to use default emoji. Upload at <a href="https://imgbb.com/" target="_blank" rel="noopener noreferrer" className="text-[var(--ck-accent)] hover:underline">imgbb.com</a></p>
+                                {siteSettings.logo_url && (
+                                    <img src={siteSettings.logo_url} alt="Logo preview" className="mt-2 h-10 object-contain rounded border border-[var(--ck-border-subtle)]" />
+                                )}
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Hero Eyebrow</label>
+                                <input type="text" value={siteSettings.hero_eyebrow} onChange={e => setSiteSettings({ ...siteSettings, hero_eyebrow: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Cape Town Sea Kayaking" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Hero Title</label>
+                                <input type="text" value={siteSettings.hero_title} onChange={e => setSiteSettings({ ...siteSettings, hero_title: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Find Your Perfect Paddle" />
+                            </div>
+                            <div className="md:col-span-2">
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Hero Subtitle</label>
+                                <input type="text" value={siteSettings.hero_subtitle} onChange={e => setSiteSettings({ ...siteSettings, hero_subtitle: e.target.value })}
+                                    className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Explore the Atlantic coastline by kayak with Cape Town's original guided team." />
                             </div>
                         </div>
                     </div>
@@ -570,6 +817,24 @@ export default function SettingsPage() {
                                     <input type="color" value={siteSettings.color_cta} onChange={e => setSiteSettings({ ...siteSettings, color_cta: e.target.value })}
                                         className="h-10 w-12 p-1 bg-transparent cursor-pointer border-r border-[var(--ck-border-subtle)]" />
                                     <input type="text" value={siteSettings.color_cta} onChange={e => setSiteSettings({ ...siteSettings, color_cta: e.target.value })}
+                                        className="flex-1 w-full px-3 py-2 text-sm outline-none uppercase" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Page Background</label>
+                                <div className="flex bg-[var(--ck-surface)] rounded-lg border border-[var(--ck-border-subtle)] overflow-hidden focus-within:ring-2 focus-within:ring-[var(--ck-accent)]">
+                                    <input type="color" value={siteSettings.color_bg} onChange={e => setSiteSettings({ ...siteSettings, color_bg: e.target.value })}
+                                        className="h-10 w-12 p-1 bg-transparent cursor-pointer border-r border-[var(--ck-border-subtle)]" />
+                                    <input type="text" value={siteSettings.color_bg} onChange={e => setSiteSettings({ ...siteSettings, color_bg: e.target.value })}
+                                        className="flex-1 w-full px-3 py-2 text-sm outline-none uppercase" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Navigation Bar</label>
+                                <div className="flex bg-[var(--ck-surface)] rounded-lg border border-[var(--ck-border-subtle)] overflow-hidden focus-within:ring-2 focus-within:ring-[var(--ck-accent)]">
+                                    <input type="color" value={siteSettings.color_nav} onChange={e => setSiteSettings({ ...siteSettings, color_nav: e.target.value })}
+                                        className="h-10 w-12 p-1 bg-transparent cursor-pointer border-r border-[var(--ck-border-subtle)]" />
+                                    <input type="text" value={siteSettings.color_nav} onChange={e => setSiteSettings({ ...siteSettings, color_nav: e.target.value })}
                                         className="flex-1 w-full px-3 py-2 text-sm outline-none uppercase" />
                                 </div>
                             </div>

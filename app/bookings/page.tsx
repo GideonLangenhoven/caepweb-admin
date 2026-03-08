@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
 import { Send, Download, ExternalLink } from "lucide-react";
@@ -86,6 +86,7 @@ interface Booking {
   status: string;
   refund_status: string | null;
   yoco_checkout_id: string | null;
+  payment_deadline: string | null;
   tours: TourRel;
   slots: SlotRel;
 }
@@ -128,7 +129,7 @@ interface EditForm {
   status: string;
 }
 
-const STATUS_OPTIONS = ["PENDING", "HELD", "CONFIRMED", "PAID", "COMPLETED", "CANCELLED"];
+const STATUS_OPTIONS = ["PENDING", "PENDING PAYMENT", "HELD", "CONFIRMED", "PAID", "COMPLETED", "CANCELLED"];
 
 export default function Bookings() {
   const { businessId } = useBusinessContext();
@@ -163,6 +164,7 @@ export default function Bookings() {
   const [rebookDate, setRebookDate] = useState("");
   const [rebookSlots, setRebookSlots] = useState<RebookSlot[]>([]);
   const [rebookSlotId, setRebookSlotId] = useState("");
+  const [rebookExcessAction, setRebookExcessAction] = useState<"REFUND" | "VOUCHER">("REFUND");
   const [loadingRebookSlots, setLoadingRebookSlots] = useState(false);
   const [paymentLinkBookingId, setPaymentLinkBookingId] = useState<string | null>(null);
   const [paymentLinkUrl, setPaymentLinkUrl] = useState<string | null>(null);
@@ -170,13 +172,28 @@ export default function Bookings() {
 
   async function loadBookings() {
     setLoading(true);
+
+    // Two-step approach: first get slot IDs in the date range, then query bookings
+    const { data: slotRows } = await supabase
+      .from("slots")
+      .select("id")
+      .eq("business_id", businessId)
+      .gte("start_time", rangeStart.toISOString())
+      .lte("start_time", rangeEnd.toISOString());
+
+    const slotIds = (slotRows || []).map((s: { id: string }) => s.id);
+    if (slotIds.length === 0) {
+      setBookings([]);
+      setLoading(false);
+      return;
+    }
+
     const { data } = await supabase
       .from("bookings")
-      .select("id, slot_id, customer_name, phone, email, qty, total_amount, status, refund_status, yoco_checkout_id, tours(id,name), slots(id,start_time,tour_id,capacity_total,booked,status)")
+      .select("id, slot_id, customer_name, phone, email, qty, total_amount, status, refund_status, yoco_checkout_id, payment_deadline, tours(id,name), slots(id,start_time,tour_id,capacity_total,booked,status)")
       .eq("business_id", businessId)
-      .gte("slots.start_time", rangeStart.toISOString())
-      .lte("slots.start_time", rangeEnd.toISOString())
-      .in("status", ["PAID", "CONFIRMED", "HELD", "PENDING", "COMPLETED", "CANCELLED"])
+      .in("slot_id", slotIds)
+      .in("status", ["PAID", "CONFIRMED", "HELD", "PENDING", "PENDING PAYMENT", "COMPLETED", "CANCELLED"])
       .order("created_at", { ascending: true })
       .limit(2000);
 
@@ -228,9 +245,10 @@ export default function Bookings() {
     for (const [dk, slotMap] of dayMap) {
       const slots: SlotGroup[] = [];
       for (const [tk, bks] of slotMap) {
-        const totalPax = bks.reduce((s, b) => s + Number(b.qty || 0), 0);
-        const totalPrice = bks.reduce((s, b) => s + Number(b.total_amount || 0), 0);
-        const totalPaid = bks.filter((b) => isPaid(b.status)).reduce((s, b) => s + Number(b.total_amount || 0), 0);
+        const activeBks = bks.filter((b) => b.status !== "CANCELLED");
+        const totalPax = activeBks.reduce((s, b) => s + Number(b.qty || 0), 0);
+        const totalPrice = activeBks.reduce((s, b) => s + Number(b.total_amount || 0), 0);
+        const totalPaid = activeBks.filter((b) => isPaid(b.status)).reduce((s, b) => s + Number(b.total_amount || 0), 0);
         slots.push({
           timeLabel: tk,
           sortKey: tk,
@@ -322,13 +340,85 @@ export default function Bookings() {
   async function resendInvoiceForBooking(bookingId: string) {
     setResendingInvoiceId(bookingId);
     try {
-      const res = await supabase.functions.invoke("send-invoice", {
-        body: { booking_id: bookingId, invoice_type: "PRO_FORMA", resend: true },
+      // Find the booking in our local state
+      const b = bookings.find((bk) => bk.id === bookingId);
+      if (!b || !b.email) {
+        alert("No email address found for this booking.");
+        setResendingInvoiceId(null);
+        return;
+      }
+      const ref = b.id.substring(0, 8).toUpperCase();
+      const tourName = b.tours?.name || "Kayak Booking";
+      const startTime = b.slots?.start_time ? fmtDate(b.slots.start_time) : "-";
+      const total = Number(b.total_amount || 0);
+      const unitPrice = b.qty > 0 ? (total / b.qty).toFixed(2) : total.toFixed(2);
+
+      // Check if an invoice already exists for this booking
+      let invoiceNumber = ref;
+      const { data: existingInv } = await supabase
+        .from("invoices")
+        .select("id, invoice_number")
+        .eq("booking_id", bookingId)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingInv?.invoice_number) {
+        invoiceNumber = existingInv.invoice_number;
+      } else {
+        // Create invoice if it doesn't exist
+        try {
+          const invNumRes = await supabase.rpc("next_invoice_number");
+          invoiceNumber = invNumRes.data || ref;
+
+          const { data: invData } = await supabase.from("invoices").insert({
+            business_id: businessId,
+            booking_id: bookingId,
+            invoice_number: invoiceNumber,
+            customer_name: b.customer_name || "Customer",
+            customer_email: b.email,
+            customer_phone: b.phone || null,
+            tour_name: tourName,
+            tour_date: b.slots?.start_time || null,
+            qty: b.qty,
+            unit_price: Number(unitPrice),
+            subtotal: total,
+            total_amount: total,
+            payment_method: b.status === "PAID" ? "Admin (Manual)" : "Pending",
+          }).select("id").single();
+
+          if (invData?.id) {
+            await supabase.from("bookings").update({ invoice_id: invData.id }).eq("id", bookingId);
+          }
+        } catch (invErr) {
+          console.error("Invoice creation failed:", invErr);
+        }
+      }
+
+      const res = await supabase.functions.invoke("send-email", {
+        body: {
+          type: "INVOICE",
+          data: {
+            email: b.email,
+            customer_name: b.customer_name || "Customer",
+            customer_email: b.email,
+            invoice_number: invoiceNumber,
+            invoice_date: startTime,
+            tour_name: tourName,
+            tour_date: startTime,
+            qty: b.qty,
+            unit_price: unitPrice,
+            subtotal: total.toFixed(2),
+            total_amount: total.toFixed(2),
+            payment_method: b.status === "PAID" ? "Admin (Manual)" : "Pending",
+            payment_reference: ref,
+          },
+        },
       });
-      if (res.error) alert("Resend failed: " + res.error.message);
-      else alert("Invoice resend queued.");
+      if (res.error) alert("Invoice send failed: " + res.error.message);
+      else alert("Invoice " + invoiceNumber + " sent to " + b.email);
     } catch (err: unknown) {
-      alert("Resend failed: " + (err instanceof Error ? err.message : String(err)));
+      alert("Invoice send failed: " + (err instanceof Error ? err.message : String(err)));
     }
     setResendingInvoiceId(null);
   }
@@ -350,6 +440,9 @@ export default function Bookings() {
     const qty = Math.max(1, Number(editForm.qty) || 1);
     const total = Number(editForm.total_amount) || 0;
     setActionBookingId(editBooking.id);
+
+    const isChangingToPaid = editForm.status === "PAID" && editBooking.status !== "PAID";
+
     const { error } = await supabase
       .from("bookings")
       .update({
@@ -358,24 +451,56 @@ export default function Bookings() {
         email: editForm.email.trim().toLowerCase(),
         qty,
         total_amount: total,
-        status: editForm.status,
+        status: isChangingToPaid ? editBooking.status : editForm.status,
       })
       .eq("id", editBooking.id);
-    setActionBookingId(null);
+
     if (error) {
+      setActionBookingId(null);
       alert("Update failed: " + error.message);
       return;
     }
+
+    if (isChangingToPaid) {
+      try {
+        const res = await supabase.functions.invoke("manual-mark-paid", {
+          body: { action: "mark_paid", booking_id: editBooking.id },
+        });
+        if (res.error) {
+          alert("Booking updated, but mark paid failed: " + res.error.message);
+        } else if (res.data?.error) {
+          alert("Booking updated, but mark paid failed: " + res.data.error);
+        } else {
+          // Success message handled quietly or via alert if preferred, loadBookings handles UI refresh.
+        }
+      } catch (err: unknown) {
+        alert("Mark paid failed: " + (err instanceof Error ? err.message : String(err)));
+      }
+    }
+
+    setActionBookingId(null);
     setEditBooking(null);
     loadBookings();
   }
 
   async function markPaid(b: Booking) {
     setActionBookingId(b.id);
-    const { error } = await supabase.from("bookings").update({ status: "PAID" }).eq("id", b.id);
+    try {
+      const res = await supabase.functions.invoke("manual-mark-paid", {
+        body: { action: "mark_paid", booking_id: b.id },
+      });
+      if (res.error) {
+        alert("Mark paid failed: " + res.error.message);
+      } else if (res.data?.error) {
+        alert("Mark paid failed: " + res.data.error);
+      } else {
+        alert("Booking marked as paid! Notifications sent.");
+      }
+    } catch (err: unknown) {
+      alert("Mark paid failed: " + (err instanceof Error ? err.message : String(err)));
+    }
     setActionBookingId(null);
-    if (error) alert("Mark paid failed: " + error.message);
-    else loadBookings();
+    loadBookings();
   }
 
   async function cancelBooking(b: Booking) {
@@ -395,10 +520,10 @@ export default function Bookings() {
   }
 
   function checkRefundLimit(): boolean {
-    var key = "ck_refund_log";
-    var now = Date.now();
-    var hour = 60 * 60 * 1000;
-    var log: number[] = JSON.parse(localStorage.getItem(key) || "[]").filter((t: number) => now - t < hour);
+    const key = "ck_refund_log";
+    const now = Date.now();
+    const hour = 60 * 60 * 1000;
+    const log: number[] = JSON.parse(localStorage.getItem(key) || "[]").filter((t: number) => now - t < hour);
     if (log.length >= 10) {
       alert("Refund limit reached. Maximum 10 refunds per hour for security. Please wait before processing more.");
       return false;
@@ -451,6 +576,7 @@ export default function Bookings() {
     setRebookBooking(b);
     setRebookDate(b.slots?.start_time ? toDateInput(b.slots.start_time) : toDateInput(new Date().toISOString()));
     setRebookSlotId("");
+    setRebookExcessAction("REFUND");
     setRebookSlots([]);
   }
 
@@ -471,11 +597,23 @@ export default function Bookings() {
         },
       });
       if (res.error) {
+        if ((res.error.message || "").includes("PAID_BOOKING_CAP_REACHED")) {
+          const goToBilling = confirm("Monthly paid-booking cap reached. Open Plans & Billing to buy a top-up or upgrade?");
+          if (goToBilling) router.push("/billing");
+          setPaymentLinkBookingId(null);
+          return;
+        }
         alert("Failed to create payment link: " + res.error.message);
         setPaymentLinkBookingId(null);
         return;
       }
       const data = res.data;
+      if (data?.error === "PAID_BOOKING_CAP_REACHED") {
+        const goToBilling = confirm("Monthly paid-booking cap reached. Open Plans & Billing to buy a top-up or upgrade?");
+        if (goToBilling) router.push("/billing");
+        setPaymentLinkBookingId(null);
+        return;
+      }
       if (data?.redirectUrl) {
         const ref = b.id.substring(0, 8).toUpperCase();
         const tourName = b.tours?.name || "Sea Kayak Tour";
@@ -516,18 +654,18 @@ export default function Bookings() {
     setPaymentLinkBookingId(null);
   }
 
-  async function loadRebookSlots(dateInput: string, tourId: string | null) {
+  async function loadRebookSlots(dateInput: string) {
     setLoadingRebookSlots(true);
     const { startIso, endIso } = dayRange(dateInput);
-    let query = supabase
+    const query = supabase
       .from("slots")
-      .select("id, start_time, capacity_total, booked, status, tour_id, tours(name)")
+      .select("id, start_time, capacity_total, booked, status, tour_id, tours(name, base_price_per_person)")
       .eq("business_id", businessId)
       .gte("start_time", startIso)
       .lt("start_time", endIso)
       .eq("status", "OPEN")
       .order("start_time", { ascending: true });
-    if (tourId) query = query.eq("tour_id", tourId);
+
     const { data } = await query;
     setRebookSlots((data || []) as RebookSlot[]);
     setLoadingRebookSlots(false);
@@ -536,25 +674,35 @@ export default function Bookings() {
   useEffect(() => {
     if (!rebookBooking || !rebookDate) return;
     const t = setTimeout(() => {
-      loadRebookSlots(rebookDate, rebookBooking.tours?.id || rebookBooking.slots?.tour_id || null);
+      loadRebookSlots(rebookDate);
     }, 0);
     return () => clearTimeout(t);
   }, [rebookBooking, rebookDate]);
 
+
   async function saveRebook() {
     if (!rebookBooking || !rebookSlotId) return;
     setActionBookingId(rebookBooking.id);
-    const { error } = await supabase.from("bookings").update({ slot_id: rebookSlotId }).eq("id", rebookBooking.id);
-    if (!error) {
-      await supabase.functions.invoke("booking-rebook-notify", {
-        body: { booking_id: rebookBooking.id, new_slot_id: rebookSlotId },
-      });
-    }
+    const { data, error } = await supabase.functions.invoke("rebook-booking", {
+      body: {
+        booking_id: rebookBooking.id,
+        new_slot_id: rebookSlotId,
+        excess_action: rebookExcessAction,
+      }
+    });
+
     setActionBookingId(null);
-    if (error) {
-      alert("Rebook failed: " + error.message);
+    if (error || data?.error) {
+      alert("Rebook failed: " + (error?.message || data?.error));
       return;
     }
+
+    if (data?.diff > 0) {
+      alert("Booking has been changed! Cost increased by R" + data.diff + ". A payment link has been sent to the customer's email and WhatsApp.");
+    } else {
+      alert("Booking has been successfully changed.");
+    }
+
     setRebookBooking(null);
     loadBookings();
   }
@@ -639,7 +787,7 @@ export default function Bookings() {
       ) : dayGroups.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-500">No bookings in this date range.</div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6 pb-48">
           {dayGroups.map((day) => {
             const slotKeys = day.slots.map((_, i) => `${day.sortKey}-${i}`);
             const allExpanded = expandAllDays.has(day.sortKey);
@@ -658,17 +806,17 @@ export default function Bookings() {
                   </label>
                 </div>
 
-                <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                <div className="rounded-xl border border-gray-200 bg-white overflow-x-auto lg:overflow-visible">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-200 bg-gray-50">
                         <th className="w-36 p-3 text-left font-semibold text-gray-600">Time</th>
                         <th className="w-16 p-3 text-left font-semibold text-gray-600">Pax</th>
+                        <th className="hidden p-3 text-left font-semibold text-gray-600 md:table-cell">Details</th>
                         <th className="hidden p-3 text-left font-semibold text-gray-600 md:table-cell">Service</th>
                         <th className="p-3 text-right font-semibold text-gray-600">Price</th>
                         <th className="p-3 text-right font-semibold text-gray-600">Paid</th>
                         <th className="p-3 text-right font-semibold text-gray-600">Due</th>
-                        <th className="hidden p-3 text-left font-semibold text-gray-600 lg:table-cell">Status</th>
                         <th className="hidden p-3 text-left font-semibold text-gray-600 lg:table-cell">Actions</th>
                       </tr>
                     </thead>
@@ -695,6 +843,7 @@ export default function Bookings() {
                             paymentLinkBookingId={paymentLinkBookingId}
                             onSendPaymentLink={sendPaymentLink}
                             onWhatsApp={openWhatsApp}
+                            onView={(b) => router.push(`/bookings/${b.id}`)}
                           />
                         );
                       })}
@@ -703,10 +852,10 @@ export default function Bookings() {
                         <td className="p-3 text-xs text-gray-500">Totals:</td>
                         <td className="p-3">{day.totalPax}</td>
                         <td className="hidden p-3 md:table-cell"></td>
+                        <td className="hidden p-3 md:table-cell"></td>
                         <td className="p-3 text-right">{fmtCurrency(day.totalPrice)}</td>
                         <td className="p-3 text-right">{fmtCurrency(day.totalPaid)}</td>
                         <td className={`p-3 text-right ${day.totalDue > 0 ? "text-red-600" : "text-gray-700"}`}>{fmtCurrency(day.totalDue)}</td>
-                        <td className="hidden p-3 lg:table-cell"></td>
                         <td className="hidden p-3 lg:table-cell"></td>
                       </tr>
                     </tbody>
@@ -826,13 +975,25 @@ export default function Bookings() {
                     const available = Math.max((s.capacity_total || 0) - (s.booked || 0), 0);
                     return (
                       <option key={s.id} value={s.id}>
-                        {fmtTime(s.start_time)} · {available} seats available
+                        {fmtTime(s.start_time)} · {s.tours?.name} · {available} seats
                       </option>
                     );
                   })}
               </select>
             </label>
             <p className="mt-2 text-xs text-gray-500">{loadingRebookSlots ? "Loading slots..." : `${rebookSlots.length} open slots found`}</p>
+
+            <label className="mt-3 block text-sm text-gray-600">
+              If the new tour costs LESS, how should we handle the leftover credit?
+              <select
+                value={rebookExcessAction}
+                onChange={(e) => setRebookExcessAction(e.target.value as "REFUND" | "VOUCHER")}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="REFUND">Request Refund</option>
+                <option value="VOUCHER">Issue Gift Voucher (Store Credit)</option>
+              </select>
+            </label>
             <div className="mt-4 flex justify-end gap-2">
               <button onClick={() => setRebookBooking(null)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50">
                 Close
@@ -911,6 +1072,7 @@ function SlotRows({
   paymentLinkBookingId,
   onSendPaymentLink,
   onWhatsApp,
+  onView,
 }: {
   slot: SlotGroup;
   services: string;
@@ -927,7 +1089,16 @@ function SlotRows({
   paymentLinkBookingId: string | null;
   onSendPaymentLink: (b: Booking) => void;
   onWhatsApp: (b: Booking) => void;
+  onView: (b: Booking) => void;
 }) {
+  const [openActions, setOpenActions] = useState<string | null>(null);
+  useEffect(() => {
+    if (!openActions) return;
+    function handleClick() { setOpenActions(null); }
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, [openActions]);
+
   return (
     <>
       <tr className="cursor-pointer border-t border-gray-100 transition-colors hover:bg-blue-50/40" onClick={onToggle}>
@@ -938,11 +1109,11 @@ function SlotRows({
           {slot.timeLabel}
         </td>
         <td className="p-3 font-semibold">{slot.totalPax}</td>
+        <td className="hidden p-3 text-gray-500 md:table-cell"></td>
         <td className="hidden p-3 text-gray-500 md:table-cell">{services}</td>
         <td className="p-3 text-right">{fmtCurrency(slot.totalPrice)}</td>
         <td className="p-3 text-right">{fmtCurrency(slot.totalPaid)}</td>
         <td className={`p-3 text-right font-semibold ${slot.totalDue > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(slot.totalDue)}</td>
-        <td className="hidden p-3 lg:table-cell"></td>
         <td className="hidden p-3 lg:table-cell"></td>
       </tr>
 
@@ -954,49 +1125,100 @@ function SlotRows({
           const isResending = resendingInvoiceId === b.id;
           const isGeneratingLink = paymentLinkBookingId === b.id;
           const hasPaymentLink = Boolean(b.yoco_checkout_id);
+          const actionsOpen = openActions === b.id;
           return (
             <tr key={b.id} className="border-t border-gray-100 bg-gray-50/60 text-xs text-gray-600">
-              <td className="p-3 pl-10 text-gray-400">
+              <td className="p-3 pl-10 text-gray-400" colSpan={1}>
                 <div className="flex flex-col gap-1">
-                  <span className="font-medium text-gray-700">{b.customer_name}</span>
-                  <span className="text-[11px]">{b.phone || "No mobile"}</span>
-                  <span className="text-[11px]">{b.email || "No email"}</span>
-                  {hasPaymentLink && (
-                    <span className="text-[10px] font-medium text-indigo-600">Payment link sent</span>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1.5 text-left lg:pointer-events-none"
+                    onClick={(e) => { e.stopPropagation(); setOpenActions(actionsOpen ? null : b.id); }}
+                  >
+                    <span className="inline-block w-3 text-gray-400 transition-transform lg:hidden" style={{ transform: actionsOpen ? "rotate(90deg)" : "none" }}>›</span>
+                    <span className="font-medium text-gray-700">{b.customer_name}</span>
+                    <StatusBadge status={b.status} />
+                  </button>
+                  {b.payment_deadline && !isPaid(b.status) && b.status !== "CANCELLED" && (
+                    <span className={`text-[10px] font-medium lg:pl-0 pl-[18px] ${new Date(b.payment_deadline) < new Date() ? "text-red-600" : "text-amber-600"}`}>
+                      {new Date(b.payment_deadline) < new Date()
+                        ? "Deadline expired"
+                        : `Expires ${new Date(b.payment_deadline).toLocaleString("en-ZA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })}`
+                      }
+                    </span>
+                  )}
+                  {/* Collapsible actions on mobile */}
+                  {actionsOpen && (
+                    <div className="mt-2 flex flex-wrap gap-1.5 pl-[18px] lg:hidden">
+                      <ActionButton label="View" onClick={() => onView(b)} tone="blue" />
+                      <ActionButton label="Edit" onClick={() => onEdit(b)} disabled={isLoading} />
+                      <ActionButton label="WhatsApp" onClick={() => onWhatsApp(b)} disabled={!b.phone} tone="green" />
+                      <ActionButton label="Rebook" onClick={() => onRebook(b)} disabled={isLoading} />
+                      <ActionButton label="Mark Paid" onClick={() => onMarkPaid(b)} disabled={isLoading || isPaid(b.status)} tone="green" />
+                      <ActionButton
+                        label={isGeneratingLink ? "..." : "Pay Link"}
+                        onClick={() => onSendPaymentLink(b)}
+                        disabled={isGeneratingLink || isPaid(b.status) || b.status === "CANCELLED"}
+                        tone="blue"
+                      />
+                      <ActionButton label="Refund" onClick={() => onRefund(b)} disabled={isLoading || b.status === "CANCELLED"} tone="amber" />
+                      <ActionButton label="Cancel" onClick={() => onCancel(b)} disabled={isLoading || b.status === "CANCELLED"} tone="red" />
+                      <ActionButton
+                        label={isResending ? "..." : "Invoice"}
+                        onClick={() => onResendInvoice(b.id)}
+                        disabled={isResending}
+                        tone="blue"
+                      />
+                      <RefundBadge status={b.refund_status} />
+                    </div>
                   )}
                 </div>
               </td>
-              <td className="p-3">{b.qty}</td>
-              <td className="hidden p-3 md:table-cell">{b.tours?.name || "—"}</td>
-              <td className="p-3 text-right">{fmtCurrency(Number(b.total_amount || 0))}</td>
-              <td className="p-3 text-right">{fmtCurrency(paid)}</td>
-              <td className={`p-3 text-right font-medium ${due > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(due)}</td>
-              <td className="hidden p-3 lg:table-cell">
-                <div className="space-y-1">
-                  <StatusBadge status={b.status} />
-                  <RefundBadge status={b.refund_status} />
+              <td className="p-3 align-top">{b.qty}</td>
+              <td className="hidden p-3 align-top md:table-cell text-[11px] text-gray-500">
+                <div className="flex flex-col mt-0.5">
+                  <span>{b.phone || "No mobile"}</span>
+                  <span>{b.email || "No email"}</span>
                 </div>
               </td>
-              <td className="hidden p-3 lg:table-cell">
-                <div className="flex flex-wrap gap-1.5">
-                  <ActionButton label="Edit" onClick={() => onEdit(b)} disabled={isLoading} />
-                  <ActionButton label="WhatsApp" onClick={() => onWhatsApp(b)} disabled={!b.phone} tone="green" />
-                  <ActionButton label="Rebook" onClick={() => onRebook(b)} disabled={isLoading || b.status === "CANCELLED"} />
-                  <ActionButton label="Mark Paid" onClick={() => onMarkPaid(b)} disabled={isLoading || isPaid(b.status)} tone="green" />
-                  <ActionButton
-                    label={isGeneratingLink ? "Generating..." : "Payment Link"}
-                    onClick={() => onSendPaymentLink(b)}
-                    disabled={isGeneratingLink || isPaid(b.status) || b.status === "CANCELLED"}
-                    tone="blue"
-                  />
-                  <ActionButton label="Refund" onClick={() => onRefund(b)} disabled={isLoading || b.status === "CANCELLED"} tone="amber" />
-                  <ActionButton label="Cancel" onClick={() => onCancel(b)} disabled={isLoading || b.status === "CANCELLED"} tone="red" />
-                  <ActionButton
-                    label={isResending ? "Resending..." : "Resend Invoice"}
-                    onClick={() => onResendInvoice(b.id)}
-                    disabled={isResending}
-                    tone="blue"
-                  />
+              <td className="hidden p-3 align-top md:table-cell">{b.tours?.name || "—"}</td>
+              <td className="p-3 text-right align-top">{fmtCurrency(Number(b.total_amount || 0))}</td>
+              <td className="p-3 text-right align-top">{fmtCurrency(paid)}</td>
+              <td className={`p-3 text-right align-top font-medium ${due > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(due)}</td>
+              <td className="hidden p-3 align-top lg:table-cell">
+                <div className="space-y-1">
+                  <div className="relative mt-1.5">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setOpenActions(actionsOpen ? null : b.id); }}
+                      className="rounded-md border border-gray-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-gray-600 hover:bg-gray-50"
+                    >
+                      Actions ▾
+                    </button>
+                    {actionsOpen && (
+                      <div className="absolute right-0 top-full z-30 mt-1 w-40 rounded-lg border border-gray-200 bg-white py-1 shadow-lg origin-top-right" onClick={(e) => e.stopPropagation()}>
+                        <ActionMenuItem label="View" onClick={() => { onView(b); setOpenActions(null); }} tone="blue" />
+                        <ActionMenuItem label="Edit" onClick={() => { onEdit(b); setOpenActions(null); }} disabled={isLoading} />
+                        <ActionMenuItem label="WhatsApp" onClick={() => { onWhatsApp(b); setOpenActions(null); }} disabled={!b.phone} tone="green" />
+                        <ActionMenuItem label="Rebook" onClick={() => { onRebook(b); setOpenActions(null); }} disabled={isLoading} />
+                        <ActionMenuItem label="Mark Paid" onClick={() => { onMarkPaid(b); setOpenActions(null); }} disabled={isLoading || isPaid(b.status)} tone="green" />
+                        <ActionMenuItem
+                          label={isGeneratingLink ? "Generating..." : "Payment Link"}
+                          onClick={() => { onSendPaymentLink(b); setOpenActions(null); }}
+                          disabled={isGeneratingLink || isPaid(b.status) || b.status === "CANCELLED"}
+                          tone="blue"
+                        />
+                        <ActionMenuItem label="Refund" onClick={() => { onRefund(b); setOpenActions(null); }} disabled={isLoading || b.status === "CANCELLED"} tone="amber" />
+                        <ActionMenuItem label="Cancel" onClick={() => { onCancel(b); setOpenActions(null); }} disabled={isLoading || b.status === "CANCELLED"} tone="red" />
+                        <ActionMenuItem
+                          label={isResending ? "Resending..." : "Resend Invoice"}
+                          onClick={() => { onResendInvoice(b.id); setOpenActions(null); }}
+                          disabled={isResending}
+                          tone="blue"
+                        />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </td>
             </tr>
@@ -1042,6 +1264,7 @@ function ActionButton({
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     PENDING: "bg-amber-100 text-amber-700",
+    "PENDING PAYMENT": "bg-red-100 text-red-700",
     HELD: "bg-orange-100 text-orange-700",
     CONFIRMED: "bg-blue-100 text-blue-700",
     PAID: "bg-emerald-100 text-emerald-700",
@@ -1052,11 +1275,45 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function RefundBadge({ status }: { status: string | null }) {
-  if (!status) return <span className="inline-block rounded bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">No refund</span>;
+  if (!status) return null;
   const colors: Record<string, string> = {
     REQUESTED: "bg-amber-100 text-amber-700",
     PROCESSED: "bg-emerald-100 text-emerald-700",
     FAILED: "bg-red-100 text-red-700",
+    TRANSFERRED: "bg-emerald-100 text-emerald-700",
   };
   return <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${colors[status] || "bg-gray-100 text-gray-700"}`}>Refund {status}</span>;
+}
+
+function ActionMenuItem({
+  label,
+  onClick,
+  disabled,
+  tone = "gray",
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "gray" | "blue" | "green" | "red" | "amber";
+}) {
+  const tones: Record<string, string> = {
+    gray: "text-gray-700 hover:bg-gray-50",
+    blue: "text-blue-700 hover:bg-blue-50",
+    green: "text-emerald-700 hover:bg-emerald-50",
+    red: "text-red-700 hover:bg-red-50",
+    amber: "text-amber-700 hover:bg-amber-50",
+  };
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      disabled={disabled}
+      className={`w-full text-left px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${tones[tone]}`}
+    >
+      {label}
+    </button>
+  );
 }

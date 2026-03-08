@@ -149,8 +149,8 @@ export default function Vouchers() {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search code, status, type, tour, value, recipient, buyer, email, dates..."
-          className="min-w-[320px] flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+          placeholder="Search vouchers..."
+          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
         />
       </div>
 
@@ -172,13 +172,13 @@ export default function Vouchers() {
                     <tr>
                       <th className="p-3 text-left font-medium text-gray-600">Code</th>
                       <th className="p-3 text-left font-medium text-gray-600">Status</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Type</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Tour</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 md:table-cell">Type</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Tour</th>
                       <th className="p-3 text-left font-medium text-gray-600">Value</th>
                       <th className="p-3 text-left font-medium text-gray-600">Recipient</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Buyer</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Expires</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Created</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 md:table-cell">Buyer</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Expires</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Created</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -190,17 +190,17 @@ export default function Vouchers() {
                             {v.status || "-"}
                           </span>
                         </td>
-                        <td className="p-3 text-xs">{v.type || "-"}</td>
-                        <td className="p-3">{v.tour_name || "-"}</td>
+                        <td className="hidden p-3 text-xs md:table-cell">{v.type || "-"}</td>
+                        <td className="hidden p-3 lg:table-cell">{v.tour_name || "-"}</td>
                         <td className="p-3">{v.value !== null && v.value !== undefined ? "R" + Number(v.value).toFixed(2) : "-"}</td>
                         <td className="p-3">{v.recipient_name || "-"}</td>
-                        <td className="p-3 text-xs">
+                        <td className="hidden p-3 text-xs md:table-cell">
                           {v.buyer_name || "-"}
                           <br />
                           {v.buyer_email || ""}
                         </td>
-                        <td className="p-3 text-xs">{v.expires_at ? new Date(v.expires_at).toLocaleDateString("en-ZA") : "-"}</td>
-                        <td className="p-3 text-xs">{v.created_at ? new Date(v.created_at).toLocaleDateString("en-ZA") : "-"}</td>
+                        <td className="hidden p-3 text-xs lg:table-cell">{v.expires_at ? new Date(v.expires_at).toLocaleDateString("en-ZA") : "-"}</td>
+                        <td className="hidden p-3 text-xs lg:table-cell">{v.created_at ? new Date(v.created_at).toLocaleDateString("en-ZA") : "-"}</td>
                       </tr>
                     ))}
                   </tbody>

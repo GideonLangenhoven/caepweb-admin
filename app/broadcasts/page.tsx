@@ -17,6 +17,7 @@ export default function BroadcastsPage() {
   var [vMonth, setVMonth] = useState(new Date().getMonth());
   var [vYear, setVYear] = useState(new Date().getFullYear());
   var [allSlots, setAllSlots] = useState<SlotData[]>([]);
+  var [paxByDate, setPaxByDate] = useState<Record<string, number>>({});
   var [selectedDate, setSelectedDate] = useState<string | null>(null);
   var [selectedSlotIds, setSelectedSlotIds] = useState<string[]>([]);
   var [bookings, setBookings] = useState<any[]>([]);
@@ -47,6 +48,22 @@ export default function BroadcastsPage() {
       .lt("start_time", future.toISOString())
       .order("start_time", { ascending: true });
     setAllSlots((data || []) as any);
+
+    var { data: bData } = await supabase.from("bookings")
+      .select("qty, status, slots(start_time)")
+      .eq("business_id", businessId)
+      .in("status", ["PAID", "CONFIRMED", "PENDING", "HELD"])
+      .gte("slots.start_time", todayStart.toISOString())
+      .lt("slots.start_time", future.toISOString());
+
+    var pByDate: Record<string, number> = {};
+    for (var b of (bData || [])) {
+      if ((b as any).slots?.start_time) {
+        var d = new Date((b as any).slots.start_time).toLocaleDateString("en-CA", { timeZone: "Africa/Johannesburg" });
+        pByDate[d] = (pByDate[d] || 0) + b.qty;
+      }
+    }
+    setPaxByDate(pByDate);
   }
 
   async function loadHistory() {
@@ -76,7 +93,7 @@ export default function BroadcastsPage() {
     var ds = vYear + "-" + String(vMonth + 1).padStart(2, "0") + "-" + String(i).padStart(2, "0");
     var isPast = new Date(ds + "T23:59:59") < now;
     var daySlots = slotsByDate[ds] || [];
-    var bookCount = daySlots.reduce((sum, sl) => sum + sl.booked, 0);
+    var bookCount = paxByDate[ds] || 0;
     cells.push({ day: i, date: ds, isPast, hasSlots: daySlots.length > 0, bookCount });
   }
 
@@ -240,7 +257,7 @@ export default function BroadcastsPage() {
           sent_count: totalSent,
           business_id: businessId,
         });
-      } catch (_) {}
+      } catch (_) { }
 
       setWeatherResult({ affected: totalAffected, sent: totalSent });
       setSelectedSlotIds([]); setBookings([]); setSelectedDate(null);
@@ -364,8 +381,8 @@ export default function BroadcastsPage() {
                   <thead>
                     <tr className="text-xs text-gray-400 border-b border-gray-100">
                       <th className="text-left py-2 font-medium">Name</th>
-                      <th className="text-left py-2 font-medium">Tour</th>
-                      <th className="text-left py-2 font-medium">Time</th>
+                      <th className="hidden text-left py-2 font-medium md:table-cell">Tour</th>
+                      <th className="hidden text-left py-2 font-medium sm:table-cell">Time</th>
                       <th className="text-center py-2 font-medium">Pax</th>
                       <th className="text-center py-2 font-medium">Channels</th>
                     </tr>
@@ -374,8 +391,8 @@ export default function BroadcastsPage() {
                     {bookings.map(b => (
                       <tr key={b.id} className="border-b border-gray-50">
                         <td className="py-2 font-medium">{b.customer_name}</td>
-                        <td className="py-2 text-gray-500">{(b as any).tours?.name}</td>
-                        <td className="py-2 text-gray-500">{(b as any).slots?.start_time ? fmtTime((b as any).slots.start_time) : "—"}</td>
+                        <td className="hidden py-2 text-gray-500 md:table-cell">{(b as any).tours?.name}</td>
+                        <td className="hidden py-2 text-gray-500 sm:table-cell">{(b as any).slots?.start_time ? fmtTime((b as any).slots.start_time) : "—"}</td>
                         <td className="py-2 text-center">{b.qty}</td>
                         <td className="py-2 text-center">
                           {b.phone && <span className="text-emerald-600 mr-1" title="WhatsApp">📱</span>}

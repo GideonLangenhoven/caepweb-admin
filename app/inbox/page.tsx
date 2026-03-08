@@ -29,8 +29,8 @@ function MessageList({
             )}
             <div className={`flex ${isAdmin ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${isAdmin
-                  ? "bg-blue-600 text-white rounded-br-md"
-                  : "bg-white border border-gray-200 text-gray-900 rounded-bl-md"
+                ? "bg-blue-600 text-white rounded-br-md"
+                : "bg-white border border-gray-200 text-gray-900 rounded-bl-md"
                 }`}>
                 <p className="whitespace-pre-wrap">{m.body}</p>
                 <p className={`text-xs mt-1 ${isAdmin ? "text-blue-200" : "text-gray-400"}`}>
@@ -57,6 +57,7 @@ export default function Inbox() {
   const [messages, setMessages] = useState<any[]>([]);
   const [reply, setReply] = useState("");
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<any>(null);
@@ -185,35 +186,63 @@ export default function Inbox() {
   }
 
   async function sendReply() {
-    if (!selected || !reply.trim()) return;
+    if (!selected || !reply.trim() || sendingRef.current) return;
+
+    sendingRef.current = true;
     setSending(true);
+
     try {
       const res = await supabase.functions.invoke("admin-reply", {
         body: { phone: selected.phone, message: reply },
       });
       if (res.error) {
         alert("Error sending: " + res.error.message);
+      } else if (res.data && res.data.ok === false) {
+        let msg = res.data.error || "Unknown Error";
+        if (res.data.details?.error?.error_data?.details) {
+          msg += "\nDetails: " + res.data.details.error.error_data.details;
+        } else if (res.data.details?.error?.message) {
+          msg += "\nDetails: " + res.data.details.error.message;
+        }
+        alert("Couldn't send WhatsApp message:\n" + msg);
       } else {
         setReply("");
       }
     } catch (err: any) {
       alert("Error: " + err.message);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
-    setSending(false);
   }
 
-  async function returnToBot(id: string) {
-    await supabase.from("conversations").update({ status: "BOT", current_state: "IDLE" }).eq("id", id);
-    setSelected(null);
-    setMessages([]);
-    loadConvos();
-    window.dispatchEvent(new Event("inbox-updated"));
+  async function returnToBot(id: string, phone: string) {
+    if (!phone) return;
+    try {
+      const res = await supabase.functions.invoke("admin-reply", {
+        body: { action: "return_to_bot", phone: phone, message: "RETURN" }, // passing dummy message to bypass missing message check just in case, but the edge function checks action first anyway
+      });
+      if (res.error) {
+        alert("Error returning to bot: " + res.error.message);
+      } else if (res.data && res.data.ok === false) {
+        alert("Error returning to bot: " + res.data.error);
+      } else {
+        setSelected(null);
+        setMessages([]);
+        loadConvos();
+        window.dispatchEvent(new Event("inbox-updated"));
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    }
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendReply();
+      if (!sendingRef.current) {
+        sendReply();
+      }
     }
   }
 
@@ -232,8 +261,8 @@ export default function Inbox() {
         <button
           onClick={() => setActiveTab("inbox")}
           className={`text-2xl font-bold px-1 pb-0.5 border-b-2 transition-colors mr-1 ${activeTab === "inbox"
-              ? "border-blue-600 text-gray-900"
-              : "border-transparent text-gray-400 hover:text-gray-600"
+            ? "border-blue-600 text-gray-900"
+            : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
         >
           Inbox
@@ -246,8 +275,8 @@ export default function Inbox() {
         <button
           onClick={() => setActiveTab("history")}
           className={`text-2xl font-bold px-1 pb-0.5 border-b-2 transition-colors ${activeTab === "history"
-              ? "border-blue-600 text-gray-900"
-              : "border-transparent text-gray-400 hover:text-gray-600"
+            ? "border-blue-600 text-gray-900"
+            : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
         >
           Chat History
@@ -258,8 +287,8 @@ export default function Inbox() {
       {activeTab === "inbox" && (
         loading ? <p className="text-gray-500">Loading...</p> : (
           <div className="flex-1 flex gap-4 min-h-0">
-            {/* Conversation list */}
-            <div className="w-72 shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {/* Conversation list — hidden on mobile when a chat is selected */}
+            <div className={`w-full md:w-72 shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden ${selected ? "hidden md:flex" : "flex"}`}>
               <div className="p-3 border-b border-gray-200 bg-gray-50">
                 <p className="text-sm font-medium text-gray-600">{convos.length} waiting</p>
               </div>
@@ -277,16 +306,19 @@ export default function Inbox() {
               </div>
             </div>
 
-            {/* Chat panel */}
+            {/* Chat panel — full width on mobile */}
             {selected ? (
               <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">{selected.customer_name || selected.phone}</p>
-                    <p className="text-xs text-gray-500">{selected.phone} · {selected.email || "no email"}</p>
+                <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between gap-2">
+                  <button onClick={() => setSelected(null)} className="md:hidden shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium hover:bg-gray-50">
+                    ← Back
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{selected.customer_name || selected.phone}</p>
+                    <p className="text-xs text-gray-500 truncate">{selected.phone} · {selected.email || "no email"}</p>
                   </div>
-                  <button onClick={() => returnToBot(selected.id)}
-                    className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700">
+                  <button onClick={() => returnToBot(selected.id, selected.phone)}
+                    className="shrink-0 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700">
                     Return to Bot
                   </button>
                 </div>
@@ -312,7 +344,7 @@ export default function Inbox() {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center bg-white rounded-xl border border-gray-200">
+              <div className="hidden md:flex flex-1 items-center justify-center bg-white rounded-xl border border-gray-200">
                 <p className="text-gray-400">Select a conversation to start chatting</p>
               </div>
             )}
@@ -324,8 +356,8 @@ export default function Inbox() {
       {activeTab === "history" && (
         historyLoading ? <p className="text-gray-500">Loading...</p> : (
           <div className="flex-1 flex gap-4 min-h-0">
-            {/* Past conversation list */}
-            <div className="w-72 shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {/* Past conversation list — hidden on mobile when a chat is selected */}
+            <div className={`w-full md:w-72 shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden ${historySelected ? "hidden md:flex" : "flex"}`}>
               <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
                 <p className="text-sm font-medium text-gray-600">{historyConvos.length} conversations</p>
                 <button onClick={loadHistoryConvos} className="text-xs text-blue-600 hover:underline">Refresh</button>
@@ -344,12 +376,17 @@ export default function Inbox() {
               </div>
             </div>
 
-            {/* Read-only transcript */}
+            {/* Read-only transcript — full width on mobile */}
             {historySelected ? (
               <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="p-3 border-b border-gray-200 bg-gray-50">
-                  <p className="font-semibold">{historySelected.customer_name || historySelected.phone}</p>
-                  <p className="text-xs text-gray-500">{historySelected.phone} · {historySelected.email || "no email"} · {historySelected.status}</p>
+                <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center gap-2">
+                  <button onClick={() => setHistorySelected(null)} className="md:hidden shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium hover:bg-gray-50">
+                    ← Back
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold truncate">{historySelected.customer_name || historySelected.phone}</p>
+                    <p className="text-xs text-gray-500 truncate">{historySelected.phone} · {historySelected.email || "no email"} · {historySelected.status}</p>
+                  </div>
                 </div>
                 <div className="flex-1 overflow-auto p-4 space-y-3 bg-gray-50">
                   {historyMessages.length === 0 ? (
@@ -360,7 +397,7 @@ export default function Inbox() {
                 </div>
               </div>
             ) : (
-              <div className="flex-1 flex items-center justify-center bg-white rounded-xl border border-gray-200">
+              <div className="hidden md:flex flex-1 items-center justify-center bg-white rounded-xl border border-gray-200">
                 <p className="text-gray-400">Select a conversation to view transcript</p>
               </div>
             )}

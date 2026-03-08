@@ -7,9 +7,11 @@ interface DayViewProps {
     slots: Slot[];
     currentDate: Date;
     onSlotClick: (slot: Slot) => void;
+    selectedCancelDates?: string[];
+    onToggleCancelDate?: (dateStr: string) => void;
 }
 
-export default function DayView({ slots, currentDate, onSlotClick }: DayViewProps) {
+export default function DayView({ slots, currentDate, onSlotClick, selectedCancelDates, onToggleCancelDate }: DayViewProps) {
     const getSlotsForDay = (date: Date) => {
         return slots.filter((slot) => {
             const slotDate = new Date(slot.start_time);
@@ -31,13 +33,31 @@ export default function DayView({ slots, currentDate, onSlotClick }: DayViewProp
         });
     };
 
+    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+    const isSelected = selectedCancelDates?.includes(dateStr);
+
+    const todayObj = new Date();
+    todayObj.setHours(0, 0, 0, 0);
+    const dayObj = new Date(currentDate);
+    dayObj.setHours(0, 0, 0, 0);
+    const isPast = dayObj < todayObj;
+
     return (
         <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-            <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-                <h3 className="font-semibold text-gray-900">
+            <div
+                onClick={() => {
+                    if (!isPast) {
+                        onToggleCancelDate?.(dateStr);
+                    }
+                }}
+                className={`p-4 border-b border-gray-200 flex justify-between items-center transition-colors ${isPast ? "opacity-50 cursor-not-allowed bg-gray-100" :
+                        isSelected ? "bg-red-100 hover:bg-red-200 cursor-pointer" : "bg-gray-50 hover:bg-gray-100 cursor-pointer"
+                    }`}
+            >
+                <h3 className={`font-semibold ${isSelected && !isPast ? "text-red-700" : isPast ? "text-gray-400" : "text-gray-900"}`}>
                     {currentDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
                 </h3>
-                <span className="text-sm text-gray-500">{daySlots.length} slots</span>
+                <span className={`text-sm ${isSelected && !isPast ? "text-red-600" : "text-gray-500"}`}>{daySlots.length} slots</span>
             </div>
 
             {daySlots.length === 0 ? (

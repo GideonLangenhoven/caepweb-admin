@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
-import { DatePicker } from "../../components/DatePicker";
+import AvailabilityCalendar from "../../components/AvailabilityCalendar";
 import { useBusinessContext } from "../../components/BusinessContext";
+import { fetchUsageSnapshot, type UsageSnapshot } from "../lib/billing";
 
 interface Tour {
   id: string;
@@ -53,6 +55,11 @@ function normalizePhone(phone: string): string {
   return clean;
 }
 
+function isValidSAPhone(phone: string): boolean {
+  const clean = normalizePhone(phone);
+  return clean.startsWith("27") && clean.length >= 11 && clean.length <= 12;
+}
+
 function dayRange(dateInput: string) {
   const start = new Date(`${dateInput}T00:00:00`);
   const end = new Date(start);
@@ -61,6 +68,7 @@ function dayRange(dateInput: string) {
 }
 
 export default function NewBookingPage() {
+  const router = useRouter();
   const { businessId } = useBusinessContext();
   const [tours, setTours] = useState<Tour[]>([]);
   const [loadingTours, setLoadingTours] = useState(true);
@@ -75,10 +83,13 @@ export default function NewBookingPage() {
   const [mobile, setMobile] = useState("");
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState("PENDING");
+  const [holdHours, setHoldHours] = useState("24");
   const [discountType, setDiscountType] = useState<"none" | "percent" | "fixed" | "manual">("none");
   const [discountValue, setDiscountValue] = useState("0");
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState("");
+  const [missingField, setMissingField] = useState<string | null>(null);
+  const [usageSnapshot, setUsageSnapshot] = useState<UsageSnapshot | null>(null);
 
   function formatSupabaseError(err: { message?: string; details?: string; hint?: string; code?: string } | null) {
     if (!err) return "Unknown error";
@@ -97,6 +108,12 @@ export default function NewBookingPage() {
     const rows = (data || []) as Tour[];
     setTours(rows);
     if (!selectedTourId && rows[0]?.id) setSelectedTourId(rows[0].id);
+    try {
+      const usage = await fetchUsageSnapshot(businessId);
+      setUsageSnapshot(usage);
+    } catch (e: any) {
+      setUsageSnapshot(null);
+    }
     setLoadingTours(false);
   }
 
@@ -152,14 +169,62 @@ export default function NewBookingPage() {
   const totalAmount = discountType === "manual"
     ? Math.max(0, discountNum)
     : Math.max(0, baseTotal - discountAmount);
-  const availableSlots = slots.filter((s) => Math.max((s.capacity_total || 0) - (s.booked || 0), 0) > 0);
+  const availableSlots = slots.filter((s) => {
+    const avail = Math.max((s.capacity_total || 0) - (s.booked || 0), 0);
+    return avail > 0 && (qty <= 0 || avail >= qty);
+  });
   const availableSeats = availableSlots.reduce((sum, s) => sum + Math.max((s.capacity_total || 0) - (s.booked || 0), 0), 0);
 
   async function createBooking() {
-    if (!selectedTourId || !bookingDate || !selectedSlotId || qty <= 0 || !customerName.trim() || !mobile.trim() || !email.trim()) {
-      alert("Please complete all required fields.");
+    setMissingField(null);
+    const missingFields = [];
+
+    if (!selectedTourId) missingFields.push("tour");
+    if (!bookingDate) missingFields.push("date");
+    if (!selectedSlotId) missingFields.push("slot");
+    if (qty <= 0) missingFields.push("pax");
+    if (!customerName.trim()) missingFields.push("name");
+
+    // International mobile validation
+    const mobileTrimmed = mobile.trim();
+    if (!mobileTrimmed) {
+      missingFields.push("mobile");
+    } else if (!/^\+(\d{1,3})/.test(mobileTrimmed)) {
+      missingFields.push("mobile_format");
+    }
+
+    if (!email.trim()) missingFields.push("email");
+
+    if (missingFields.length > 0) {
+      setMissingField(missingFields[0]);
+      if (missingFields.includes("mobile_format")) {
+        alert(`Please include the correct international country code for the mobile number (e.g. +27, +44, etc).`);
+      }
       return;
     }
+
+    // Warn if SA phone number looks invalid (should be 11+ digits after normalization)
+    const normalizedMobile = normalizePhone(mobileTrimmed);
+    if (normalizedMobile.startsWith("27") && normalizedMobile.length < 11) {
+      if (!confirm("The mobile number looks too short for a South African number (" + normalizedMobile + "). A valid SA number should be like +27 71 234 5678.\n\nContinue anyway?")) {
+        return;
+      }
+    }
+
+    if (status === "PAID" && totalAmount > 0) {
+      try {
+        const latestUsage = await fetchUsageSnapshot(businessId);
+        setUsageSnapshot(latestUsage);
+        if (latestUsage && !latestUsage.uncapped_flag && (latestUsage.remaining || 0) <= 0) {
+          const goToBilling = confirm("Paid booking cap reached for this month. Open Plans & Billing to buy a top-up or upgrade?");
+          if (goToBilling) router.push("/billing");
+          return;
+        }
+      } catch (e) {
+        console.error("Failed to check booking cap:", e);
+      }
+    }
+
     setSubmitting(true);
     setResult("");
     try {
@@ -178,6 +243,11 @@ export default function NewBookingPage() {
         status,
         source: "ADMIN",
       };
+
+      // Set payment deadline for PENDING bookings based on hold duration
+      if (status === "PENDING") {
+        insertPayload.payment_deadline = new Date(Date.now() + Number(holdHours) * 3600000).toISOString();
+      }
 
       if (discountType !== "none" && discountType !== "manual") {
         insertPayload.original_total = baseTotal;
@@ -201,7 +271,112 @@ export default function NewBookingPage() {
       const slotTimeLabel = slotObj?.start_time
         ? new Date(slotObj.start_time).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })
         : "TBC";
-      const mapsUrl = "https://www.google.com/maps?q=-33.899368,18.411569";
+      const tourDateLabel = slotObj?.start_time
+        ? new Date(slotObj.start_time).toLocaleDateString("en-ZA", { day: "numeric", month: "long", year: "numeric", timeZone: "Africa/Johannesburg" })
+        : "TBC";
+      const mapsUrl = "https://www.google.com/maps/search/?api=1&query=Cape+Kayak+Adventures%2C+180+Beach+Rd%2C+Three+Anchor+Bay%2C+Cape+Town%2C+8005";
+
+      // ── Create invoice for every booking ──
+      let invoiceNumber = ref;
+      try {
+        const invNumRes = await supabase.rpc("next_invoice_number");
+        invoiceNumber = invNumRes.data || ref;
+        const subtotal = baseTotal;
+        const discountAmt = Math.max(0, subtotal - totalAmount);
+
+        const invPayload: Record<string, unknown> = {
+          business_id: businessId,
+          booking_id: bookingId,
+          invoice_number: invoiceNumber,
+          customer_name: customerName.trim(),
+          customer_email: email.trim().toLowerCase(),
+          customer_phone: normalizePhone(mobile),
+          tour_name: tourObj?.name || "Tour",
+          tour_date: slotObj?.start_time || null,
+          qty,
+          unit_price: unitPrice,
+          subtotal,
+          total_amount: totalAmount,
+          payment_method: status === "PAID" ? "Admin (Manual)" : "Pending",
+          discount_type: discountType !== "none" ? (discountType === "percent" ? "PERCENT" : discountType === "fixed" ? "FIXED" : "MANUAL") : null,
+          discount_percent: discountType === "percent" ? discountNum : 0,
+          discount_amount: discountAmt,
+        };
+
+        const { data: invData } = await supabase.from("invoices").insert(invPayload).select("id").single();
+        if (invData?.id) {
+          await supabase.from("bookings").update({ invoice_id: invData.id }).eq("id", bookingId);
+        }
+      } catch (invErr) {
+        console.error("Invoice creation failed:", invErr);
+      }
+
+      // ── Auto-send payment link for PENDING bookings ──
+      let paymentLinkSent = false;
+      if (status === "PENDING" && email.trim() && totalAmount > 0) {
+        try {
+          const checkoutRes = await supabase.functions.invoke("create-checkout", {
+            body: {
+              amount: totalAmount,
+              booking_id: bookingId,
+              type: "BOOKING",
+              customer_name: customerName.trim(),
+              qty,
+            },
+          });
+          const checkoutData = checkoutRes.data;
+          if (checkoutRes.error) {
+            console.error("Auto payment link failed (checkout):", checkoutRes.error);
+          } else if (checkoutData?.redirectUrl) {
+            // Send payment link email
+            try {
+              await supabase.functions.invoke("send-email", {
+                body: {
+                  type: "PAYMENT_LINK",
+                  data: {
+                    email: email.trim().toLowerCase(),
+                    customer_name: customerName.trim(),
+                    ref,
+                    tour_name: tourObj?.name || "Tour",
+                    tour_date: tourDateLabel,
+                    qty,
+                    total_amount: totalAmount.toFixed(2),
+                    payment_url: checkoutData.redirectUrl,
+                  },
+                },
+              });
+              paymentLinkSent = true;
+            } catch (emailErr) {
+              console.error("Payment link email failed:", emailErr);
+            }
+
+            // Send WhatsApp with payment link
+            if (mobile.trim()) {
+              try {
+                const firstName = customerName.trim().split(" ")[0] || "there";
+                await supabase.functions.invoke("send-whatsapp-text", {
+                  body: {
+                    to: normalizePhone(mobile),
+                    message:
+                      "Hi " + firstName + "!\n\n" +
+                      "Here\u2019s your payment link to confirm your booking:\n\n" +
+                      "\u{1F6F6} " + (tourObj?.name || "Tour") + "\n" +
+                      "\u{1F4C5} " + slotTimeLabel + "\n" +
+                      "\u{1F465} " + qty + " people\n" +
+                      "\u{1F4B0} R" + totalAmount.toFixed(2) + "\n\n" +
+                      "\u{1F517} Pay here: " + checkoutData.redirectUrl + "\n\n" +
+                      "\u23F0 Please complete payment within " + holdHours + " hours to secure your spot.",
+                  },
+                });
+              } catch (waErr) {
+                console.error("Payment link WhatsApp failed:", waErr);
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Auto payment link flow failed:", err);
+        }
+      }
 
       // Only send confirmation email + WhatsApp for completed bookings (PAID/CONFIRMED).
       // PENDING/HELD bookings will get confirmed by the Yoco webhook after payment.
@@ -225,6 +400,32 @@ export default function NewBookingPage() {
           } catch (e) {
             console.error("Confirmation email failed:", e);
           }
+
+          // Send invoice email with pro forma PDF attachment
+          try {
+            await supabase.functions.invoke("send-email", {
+              body: {
+                type: "INVOICE",
+                data: {
+                  email: email.trim().toLowerCase(),
+                  customer_name: customerName.trim(),
+                  customer_email: email.trim().toLowerCase(),
+                  invoice_number: invoiceNumber,
+                  invoice_date: tourDateLabel,
+                  tour_name: tourObj?.name || "Tour",
+                  tour_date: tourDateLabel,
+                  qty,
+                  unit_price: unitPrice.toFixed(2),
+                  subtotal: baseTotal.toFixed(2),
+                  total_amount: totalAmount.toFixed(2),
+                  payment_method: "Admin (Manual)",
+                  payment_reference: ref,
+                },
+              },
+            });
+          } catch (e) {
+            console.error("Invoice email failed:", e);
+          }
         }
 
         if (mobile.trim()) {
@@ -238,9 +439,10 @@ export default function NewBookingPage() {
                   "\u{1F4C5} " + slotTimeLabel + "\n" +
                   "\u{1F465} " + qty + " people\n" +
                   "\u{1F4B0} R" + totalAmount.toFixed(2) + "\n\n" +
-                  "\u{1F4CD} *Meeting Point:*\nThree Anchor Bay, Beach Road, Sea Point\nCape Town, Western Cape\nArrive 15 min early\n\n" +
+                  "\u{1F4CD} *Meeting Point:*\nCape Kayak Adventures\n180 Beach Rd, Three Anchor Bay\nCape Town, 8005\nArrive 15 min early\n\n" +
                   "\u{1F5FA} " + mapsUrl + "\n\n" +
                   "\u{1F392} *Bring:* Sunscreen, hat, towel, water bottle\n\n" +
+                  "\u{1F4DD} *Manage Your Booking:*\nhttps://book.capekayak.co.za/my-bookings\n\n" +
                   "We can\u2019t wait to see you! \u{1F30A}",
               },
             });
@@ -250,7 +452,14 @@ export default function NewBookingPage() {
         }
       }
 
-      setResult(`Booking created successfully! Ref: ${ref}`);
+      alert(
+        status === "PENDING" && paymentLinkSent
+          ? `Booking created! Ref: ${ref} \u2014 Payment link emailed to ${email.trim().toLowerCase()}`
+          : status === "PENDING"
+            ? `Booking created! Ref: ${ref} \u2014 Payment link could not be sent (re-send from bookings page)`
+            : `Booking created successfully! Ref: ${ref}`
+      );
+      router.push("/bookings");
 
       setCustomerName("");
       setMobile("");
@@ -261,10 +470,18 @@ export default function NewBookingPage() {
       setDiscountType("none");
       setDiscountValue("0");
       loadSlots();
+      if (status === "PAID" && totalAmount > 0) {
+        try {
+          const updatedUsage = await fetchUsageSnapshot(businessId);
+          setUsageSnapshot(updatedUsage);
+        } catch (e) {
+          console.error("Failed to refresh usage:", e);
+        }
+      }
     } catch (err: unknown) {
       alert("Booking creation failed: " + (err instanceof Error ? err.message : String(err)));
+      setSubmitting(false);
     }
-    setSubmitting(false);
   }
 
   return (
@@ -272,63 +489,98 @@ export default function NewBookingPage() {
       <div>
         <h2 className="text-2xl font-bold">➕ New Booking</h2>
         <p className="text-sm text-gray-500">Create manual bookings and send confirmation with payment link.</p>
+        {usageSnapshot && (
+          <p className="mt-2 text-xs text-gray-500">
+            Current month usage: {usageSnapshot.paid_bookings_count} paid bookings
+            {usageSnapshot.uncapped_flag ? " (uncapped plan)." : ` / ${usageSnapshot.total_quota || 0}. Remaining: ${usageSnapshot.remaining || 0}.`}
+          </p>
+        )}
       </div>
 
       <div className="rounded-xl border border-gray-200 bg-white p-5">
         <h3 className="mb-4 text-xl font-medium text-gray-700">Activity Details</h3>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <label className="text-sm text-gray-600">
-            To attend
-            <select
-              value={selectedTourId}
-              onChange={(e) => setSelectedTourId(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            >
-              <option value="">Please select a service</option>
-              {tours.map((tour) => (
-                <option key={tour.id} value={tour.id}>
-                  {tour.name}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_auto]">
+          {/* Left: tour + pax selectors */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <label className="text-sm text-gray-600">
+              To attend <span className="text-red-500">*</span>
+              <select
+                value={selectedTourId}
+                onChange={(e) => { setSelectedTourId(e.target.value); setMissingField(null); }}
+                className={`mt-1 w-full rounded border ${missingField === "tour" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
+              >
+                <option value="">Please select a service</option>
+                {tours.map((tour) => (
+                  <option key={tour.id} value={tour.id}>
+                    {tour.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="text-sm text-gray-600">
-            On
-            <div className="mt-1">
-              <DatePicker value={bookingDate} onChange={setBookingDate} className="py-2 w-full border-gray-300" />
+            <label className="text-sm text-gray-600">
+              Adults <span className="text-red-500">*</span>
+              <select
+                value={adults}
+                onChange={(e) => { setAdults(e.target.value); setMissingField(null); }}
+                className={`mt-1 w-full rounded border ${missingField === "pax" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
+              >
+                {[...Array(51)].map((_, i) => (
+                  <option key={i} value={i}>
+                    {i}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="text-sm text-gray-600">
+              Children
+              <select
+                value={children}
+                onChange={(e) => { setChildren(e.target.value); setMissingField(null); }}
+                className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              >
+                {[...Array(51)].map((_, i) => (
+                  <option key={i} value={i}>
+                    {i}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {/* Right: availability calendar */}
+          <div className="flex flex-col items-center">
+            <label className={`text-sm mb-1 self-start ${missingField === "date" ? "text-red-500 font-medium" : "text-gray-600"}`}>Select date <span className="text-red-500">*</span></label>
+            <div className={`transition-colors rounded-xl ${missingField === "date" ? "ring-2 ring-red-500" : ""}`}>
+              <AvailabilityCalendar
+                value={bookingDate}
+                onChange={(v) => { setBookingDate(v); setMissingField(null); }}
+                tourId={selectedTourId}
+                businessId={businessId}
+                minQty={qty}
+              />
             </div>
-          </label>
 
-          <label className="text-sm text-gray-600">
-            Adults
-            <select
-              value={adults}
-              onChange={(e) => setAdults(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            >
-              {[...Array(51)].map((_, i) => (
-                <option key={i} value={i}>
-                  {i}
-                </option>
-              ))}
-            </select>
-          </label>
+            {/* Slot color legend */}
+            {availableSlots.length > 0 && (
+              <div className="mt-4 flex flex-col gap-2 w-full pt-4 border-t border-gray-100">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Time Slots Available</p>
+                {availableSlots.slice(0, 4).map((slot, i) => {
+                  const available = Math.max((slot.capacity_total || 0) - (slot.booked || 0), 0);
+                  const color = ["#10b981", "#a855f7", "#f59e0b", "#3b82f6"][i] || "#9ca3af";
+                  return (
+                    <div key={slot.id} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span style={{ backgroundColor: color }} className="w-3 h-3 rounded-full shrink-0"></span>
+                      <span className="font-medium">{available} available</span>
+                      <span className="text-gray-500">for the {fmtTime(slot.start_time)} slot</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-          <label className="text-sm text-gray-600">
-            Children
-            <select
-              value={children}
-              onChange={(e) => setChildren(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
-            >
-              {[...Array(51)].map((_, i) => (
-                <option key={i} value={i}>
-                  {i}
-                </option>
-              ))}
-            </select>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -336,28 +588,35 @@ export default function NewBookingPage() {
         <h3 className="mb-4 text-base font-semibold text-gray-700">Customer Details</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <label className="text-sm text-gray-600">
-            Full Name
+            Full Name <span className="text-red-500">*</span>
             <input
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              onChange={(e) => { setCustomerName(e.target.value); setMissingField(null); }}
+              placeholder="Gideon Langenhoven"
+              className={`mt-1 w-full rounded border ${missingField === "name" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10 placeholder:text-red-300" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
             />
           </label>
           <label className="text-sm text-gray-600">
-            Mobile Number
+            Mobile Number <span className="text-red-500">*</span>
             <input
+              type="tel"
               value={mobile}
-              onChange={(e) => setMobile(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              onChange={(e) => { setMobile(e.target.value); setMissingField(null); }}
+              placeholder="+27 82 123 4567"
+              className={`mt-1 w-full rounded border ${missingField === "mobile" || missingField === "mobile_format" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10 placeholder:text-red-300" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
             />
+            {(missingField === "mobile_format") && (
+              <p className="text-xs text-red-500 mt-1">International format required (e.g. +27)</p>
+            )}
           </label>
           <label className="text-sm text-gray-600">
-            Email
+            Email <span className="text-red-500">*</span>
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+              onChange={(e) => { setEmail(e.target.value); setMissingField(null); }}
+              placeholder="gidslang89@gmail.com"
+              className={`mt-1 w-full rounded border ${missingField === "email" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10 placeholder:text-red-300" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
             />
           </label>
         </div>
@@ -372,13 +631,13 @@ export default function NewBookingPage() {
         </div>
 
         <label className="text-sm text-gray-600">
-          Select slot time
+          Select slot time <span className="text-red-500">*</span>
           <select
             value={selectedSlotId}
-            onChange={(e) => setSelectedSlotId(e.target.value)}
-            className="mt-1 w-full rounded border border-gray-300 px-3 py-2 text-sm"
+            onChange={(e) => { setSelectedSlotId(e.target.value); setMissingField(null); }}
+            className={`mt-1 w-full rounded border ${missingField === "slot" ? "border-red-500 ring-1 ring-red-500 bg-red-50/10" : "border-gray-300"} px-3 py-2 text-sm transition-colors`}
           >
-            <option value="">Choose slot</option>
+            <option value="">{availableSlots.length > 0 ? "Choose slot" : "No slots available"}</option>
             {availableSlots.map((slot) => {
               const available = Math.max((slot.capacity_total || 0) - (slot.booked || 0), 0);
               return (
@@ -390,7 +649,7 @@ export default function NewBookingPage() {
           </select>
         </label>
 
-        <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div className={`mt-4 grid grid-cols-1 gap-3 ${status === "PENDING" ? "md:grid-cols-5" : "md:grid-cols-4"}`}>
           <div className="rounded-lg bg-gray-50 p-3 text-sm">
             <p className="text-xs text-gray-500">Qty</p>
             <p className="font-semibold">{qty}</p>
@@ -412,6 +671,17 @@ export default function NewBookingPage() {
               <option value="PAID">PAID</option>
             </select>
           </label>
+          {status === "PENDING" && (
+            <label className="rounded-lg bg-gray-50 p-3 text-sm">
+              <span className="text-xs text-gray-500">Hold booking for</span>
+              <select value={holdHours} onChange={(e) => setHoldHours(e.target.value)} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm">
+                <option value="12">12 hours</option>
+                <option value="24">24 hours</option>
+                <option value="36">36 hours</option>
+                <option value="48">48 hours</option>
+              </select>
+            </label>
+          )}
         </div>
       </div>
 
@@ -463,13 +733,11 @@ export default function NewBookingPage() {
         <button
           onClick={createBooking}
           disabled={submitting || loadingTours || loadingSlots}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+          className="rounded-lg bg-[#0f595e] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0b4347] disabled:opacity-50 transition-colors shadow-sm"
         >
-          {submitting ? "Creating..." : `Create Booking · ${fmtCurrency(totalAmount)}`}
+          {submitting ? "Processing..." : `Create Booking · ${fmtCurrency(totalAmount)}`}
         </button>
       </div>
-
-      {result && <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">{result}</div>}
     </div>
   );
 }

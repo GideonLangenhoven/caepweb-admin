@@ -49,12 +49,20 @@ export default function Slots() {
   });
   const [savingAdd, setSavingAdd] = useState(false);
 
+  // Cancel Day State
+  const [showCancelDay, setShowCancelDay] = useState(false);
+  const [selectedCancelDates, setSelectedCancelDates] = useState<string[]>([]);
+
+  const toggleCancelDate = (dateStr: string) => {
+    setSelectedCancelDates(prev => prev.includes(dateStr) ? prev.filter(d => d !== dateStr) : [...prev, dateStr]);
+  };
+
   async function cancelSlotWeather(slot: Slot) {
     const slotLabel = new Date(slot.start_time).toLocaleString("en-ZA", {
       weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg",
     }) + " — " + (slot.tours?.name || "Tour");
 
-    if (!confirm(`Cancel "${slotLabel}" due to weather?\n\nThis will:\n• Close the slot\n• Cancel all bookings on this slot\n• Queue full refunds for all paid bookings\n• Notify customers via WhatsApp & email`)) return;
+    if (!confirm(`Cancel "${slotLabel}" due to weather?\n\nThis will:\n• Close the slot\n• Cancel all bookings on this slot\n• Notify customers via WhatsApp & email to manage their booking (reschedule/voucher/refund)`)) return;
 
     setCancellingWeather(true);
     try {
@@ -76,16 +84,11 @@ export default function Slots() {
         const isPaidBooking = ["PAID", "CONFIRMED"].includes(b.status);
         const refundAmount = isPaidBooking ? Number(b.total_amount || 0) : 0;
 
-        // Cancel the booking with weather reason + queue 100% refund
+        // Cancel the booking with weather reason (users will manage refunds/reschedules themselves)
         await supabase.from("bookings").update({
           status: "CANCELLED",
-          cancellation_reason: "Weather cancellation by admin",
+          cancellation_reason: "Weather cancellation",
           cancelled_at: new Date().toISOString(),
-          ...(isPaidBooking && refundAmount > 0 ? {
-            refund_status: "REQUESTED",
-            refund_amount: refundAmount,
-            refund_notes: "100% refund — weather cancellation",
-          } : {}),
         }).eq("id", b.id);
 
         if (isPaidBooking && refundAmount > 0) refundCount++;
@@ -121,9 +124,9 @@ export default function Slots() {
                   " has been cancelled due to weather conditions.\n\n" +
                   "📋 Ref: " + ref + "\n" +
                   (isPaidBooking && refundAmount > 0
-                    ? "💰 A *full refund of R" + refundAmount + "* has been submitted — expect it within 5–7 business days.\n\n"
+                    ? "\n"
                     : "\n") +
-                  "You're welcome to rebook anytime — just type *book* 🛶",
+                  "You will receive an email shortly with a link to manage your booking, where you can easily reschedule, get a voucher, or request a refund. 🛶",
               }),
             });
           } catch (e) { console.error("WA notify err:", e); }
@@ -150,11 +153,127 @@ export default function Slots() {
         }
       }
 
-      alert(`Weather cancellation complete.\n\n• ${affected.length} booking(s) cancelled\n• ${refundCount} refund(s) queued for approval\n\nProcess refunds on the Refunds page.`);
+      alert(`Weather cancellation complete.\n\n• ${affected.length} booking(s) cancelled.\nCustomers have been emailed links to manage their own reschedules or refunds.`);
       setSelectedSlot(null);
       load();
     } catch (err) {
       alert("Weather cancellation failed: " + (err instanceof Error ? err.message : String(err)));
+    }
+    setCancellingWeather(false);
+  }
+
+  async function handleCancelDay() {
+    if (selectedCancelDates.length === 0) return;
+    if (!confirm(`Cancel ALL slots for ${selectedCancelDates.length} selected day(s) due to weather?\n\nThis will:\n• Close all slots on these days\n• Cancel all bookings on these slots\n• Notify customers via WhatsApp & email to manage their booking`)) return;
+
+    setCancellingWeather(true);
+    try {
+      const allSlotIds: string[] = [];
+
+      for (const dateStr of selectedCancelDates) {
+        const startOfDay = new Date(dateStr + "T00:00:00+02:00").toISOString();
+        const endOfDay = new Date(dateStr + "T23:59:59+02:00").toISOString();
+
+        const { data: slotsToCancel, error: fetchErr } = await supabase
+          .from("slots")
+          .select("id")
+          .gte("start_time", startOfDay)
+          .lte("start_time", endOfDay)
+          .eq("business_id", businessId);
+
+        if (fetchErr) throw fetchErr;
+
+        if (slotsToCancel && slotsToCancel.length > 0) {
+          allSlotIds.push(...slotsToCancel.map(s => s.id));
+        }
+      }
+
+      if (allSlotIds.length === 0) {
+        alert("No slots found for the selected dates.");
+        setCancellingWeather(false);
+        return;
+      }
+
+      await supabase.from("slots").update({ status: "CLOSED" }).in("id", allSlotIds);
+
+      const { data: bookings } = await supabase
+        .from("bookings")
+        .select("id, customer_name, phone, email, qty, total_amount, status, yoco_checkout_id, tours(name), slots(start_time), slot_id")
+        .eq("business_id", businessId)
+        .in("slot_id", allSlotIds)
+        .in("status", ["PAID", "CONFIRMED", "HELD", "PENDING"]);
+
+      const affected = bookings || [];
+
+      for (const b of affected) {
+        const isPaidBooking = ["PAID", "CONFIRMED"].includes(b.status);
+        const refundAmount = isPaidBooking ? Number(b.total_amount || 0) : 0;
+
+        await supabase.from("bookings").update({
+          status: "CANCELLED",
+          cancellation_reason: "Weather cancellation",
+          cancelled_at: new Date().toISOString(),
+        }).eq("id", b.id);
+
+        const slotData = await supabase.from("slots").select("booked, held").eq("id", b.slot_id).single();
+        if (slotData.data) {
+          await supabase.from("slots").update({
+            booked: Math.max(0, slotData.data.booked - b.qty),
+            held: Math.max(0, (slotData.data.held || 0) - (b.status === "HELD" ? b.qty : 0)),
+          }).eq("id", b.slot_id);
+        }
+
+        await supabase.from("holds").update({ status: "CANCELLED" }).eq("booking_id", b.id).eq("status", "ACTIVE");
+
+        const ref = b.id.substring(0, 8).toUpperCase();
+        const tourName = (b as any).tours?.name || "Tour";
+        const startTime = (b as any).slots?.start_time
+          ? new Date((b as any).slots.start_time).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })
+          : "";
+
+        if (b.phone) {
+          try {
+            await fetch(SU + "/functions/v1/send-whatsapp-text", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: "Bearer " + SK },
+              body: JSON.stringify({
+                to: b.phone,
+                message: "⛈ *Trip Cancelled — Weather*\n\n" +
+                  "Hi " + (b.customer_name?.split(" ")[0] || "there") + ", unfortunately your " + tourName + " on " + startTime +
+                  " has been cancelled due to weather conditions.\n\n" +
+                  "📋 Ref: " + ref + "\n\n" +
+                  "You will receive an email shortly with a link to manage your booking, where you can easily reschedule, get a voucher, or request a refund. 🛶",
+              }),
+            });
+          } catch (e) { console.error("WA notify err:", e); }
+        }
+
+        if (b.email) {
+          try {
+            await supabase.functions.invoke("send-email", {
+              body: {
+                type: "CANCELLATION",
+                data: {
+                  email: b.email,
+                  customer_name: b.customer_name,
+                  ref,
+                  tour_name: tourName,
+                  start_time: startTime,
+                  reason: "weather conditions",
+                  refund_amount: isPaidBooking && refundAmount > 0 ? refundAmount : null,
+                },
+              },
+            });
+          } catch (e) { console.error("Email notify err:", e); }
+        }
+      }
+
+      alert(`Weather cancellation complete for ${selectedCancelDates.length} day(s).\n\n• ${allSlotIds.length} slot(s) closed\n• ${affected.length} booking(s) cancelled.\nCustomers have been emailed links to manage their own reschedules or refunds.`);
+      setShowCancelDay(false);
+      setSelectedCancelDates([]);
+      load();
+    } catch (err: any) {
+      alert("Error cancelling day: " + err.message);
     }
     setCancellingWeather(false);
   }
@@ -439,6 +558,18 @@ export default function Slots() {
         <h2 className="text-xl sm:text-2xl font-bold">Slot Management</h2>
         <div className="flex gap-2">
           <button
+            onClick={() => {
+              if (selectedCancelDates.length === 0) {
+                alert("Please select dates first by clicking the date headers on the calendar.");
+                return;
+              }
+              setShowCancelDay(true);
+            }}
+            className={`px-3 py-2 font-medium rounded-lg transition-colors text-sm ${selectedCancelDates.length > 0 ? 'bg-red-600 border border-red-700 text-white hover:bg-red-700' : 'border border-red-300 bg-red-50 text-red-700 hover:bg-red-100'}`}
+          >
+            ⛈ Cancel Day(s) {selectedCancelDates.length > 0 ? `(${selectedCancelDates.length})` : ""}
+          </button>
+          <button
             onClick={() => { if (tours.length > 0) setAddForm(f => ({ ...f, tourId: f.tourId || tours[0].id })); setShowAddSlot(true); }}
             className="px-3 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors text-sm"
           >
@@ -470,12 +601,16 @@ export default function Slots() {
             slots={slots}
             currentDate={currentDate}
             onSlotClick={handleSlotClick}
+            selectedCancelDates={selectedCancelDates}
+            onToggleCancelDate={toggleCancelDate}
           />
         ) : (
           <DayView
             slots={slots}
             currentDate={currentDate}
             onSlotClick={handleSlotClick}
+            selectedCancelDates={selectedCancelDates}
+            onToggleCancelDate={toggleCancelDate}
           />
         )
       )}
@@ -570,7 +705,7 @@ export default function Slots() {
       {/* BULK EDIT MODAL */}
       {showBulkEdit && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl w-full sm:max-w-md max-h-[90vh] overflow-auto p-6 shadow-xl">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl w-full sm:max-w-md max-h-[90vh] overflow-visible p-6 shadow-xl">
             <h3 className="text-xl font-bold mb-1">Bulk Edit Slots</h3>
             <p className="text-sm text-gray-500 mb-4">
               Apply new capacities or base amounts to multiple slots at once.
@@ -581,13 +716,13 @@ export default function Slots() {
                 <label className="block text-sm text-gray-600">
                   Start Date
                   <div className="mt-1">
-                    <DatePicker value={bulkForm.startDate} onChange={(val) => setBulkForm({ ...bulkForm, startDate: val })} className="py-2.5 w-full border-gray-300" />
+                    <DatePicker position="top" value={bulkForm.startDate} onChange={(v) => setBulkForm({ ...bulkForm, startDate: v })} className="py-2.5 w-full border-gray-300" />
                   </div>
                 </label>
                 <label className="block text-sm text-gray-600">
                   End Date (Inclusive)
                   <div className="mt-1">
-                    <DatePicker value={bulkForm.endDate} onChange={(val) => setBulkForm({ ...bulkForm, endDate: val })} className="py-2.5 w-full border-gray-300" />
+                    <DatePicker position="top" value={bulkForm.endDate} onChange={(v) => setBulkForm({ ...bulkForm, endDate: v })} className="py-2.5 w-full border-gray-300" />
                   </div>
                 </label>
               </div>
@@ -665,7 +800,7 @@ export default function Slots() {
       {/* ADD SLOT MODAL */}
       {showAddSlot && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white rounded-t-2xl sm:rounded-xl w-full sm:max-w-md max-h-[90vh] overflow-auto p-6 shadow-xl">
+          <div className="bg-white rounded-t-2xl sm:rounded-xl w-full sm:max-w-md max-h-[90vh] overflow-visible p-6 shadow-xl">
             <h3 className="text-xl font-bold mb-1">Add New Slots</h3>
             <p className="text-sm text-gray-500 mb-4">
               Create slots for a time across a date range.
@@ -700,13 +835,13 @@ export default function Slots() {
                 <label className="block text-sm text-gray-600">
                   Start Date
                   <div className="mt-1">
-                    <DatePicker value={addForm.startDate} onChange={(val) => setAddForm({ ...addForm, startDate: val })} className="py-2.5 w-full border-gray-300" />
+                    <DatePicker position="top" value={addForm.startDate} onChange={(val) => setAddForm({ ...addForm, startDate: val })} className="py-2.5 w-full border-gray-300" />
                   </div>
                 </label>
                 <label className="block text-sm text-gray-600">
                   End Date
                   <div className="mt-1">
-                    <DatePicker value={addForm.endDate} onChange={(val) => setAddForm({ ...addForm, endDate: val })} className="py-2.5 w-full border-gray-300" />
+                    <DatePicker position="top" value={addForm.endDate} onChange={(val) => setAddForm({ ...addForm, endDate: val })} className="py-2.5 w-full border-gray-300" />
                   </div>
                 </label>
               </div>
@@ -750,6 +885,42 @@ export default function Slots() {
                 className="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 {savingAdd ? "Creating..." : "Create Slots"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANCEL DAY MODAL */}
+      {showCancelDay && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-sm overflow-visible p-6 shadow-xl">
+            <h3 className="text-xl font-bold mb-1 text-red-700">Cancel ({selectedCancelDates.length}) Day(s)</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              You are about to close all slots and cancel active bookings due to weather for the following days:
+            </p>
+
+            <div className="space-y-2 max-h-[30vh] overflow-y-auto mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+              <ul className="list-disc pl-5">
+                {selectedCancelDates.map((date) => (
+                  <li key={date} className="font-semibold text-gray-800 text-sm">{new Date(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => setShowCancelDay(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={handleCancelDay}
+                disabled={cancellingWeather || selectedCancelDates.length === 0}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {cancellingWeather ? "Cancelling..." : "Cancel Everything"}
               </button>
             </div>
           </div>

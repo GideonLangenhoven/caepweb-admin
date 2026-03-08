@@ -18,6 +18,7 @@ export default function Refunds() {
   var [processing, setProcessing] = useState<string | null>(null);
   var [results, setResults] = useState<Record<string, any>>({});
   var [showProcessed, setShowProcessed] = useState(false);
+  var [editedAmounts, setEditedAmounts] = useState<Record<string, string>>({});
 
   useEffect(() => { load(); }, [businessId]);
 
@@ -39,10 +40,28 @@ export default function Refunds() {
     setLoading(false);
   }
 
+  function getRefundAmount(b: any): number {
+    var edited = editedAmounts[b.id];
+    if (edited !== undefined) return Math.max(0, parseFloat(edited) || 0);
+    return Number(b.refund_amount || 0);
+  }
+
+  async function saveRefundAmount(id: string, amount: number) {
+    await supabase.from("bookings").update({ refund_amount: amount }).eq("id", id);
+  }
+
   async function autoRefund(id: string) {
-    if (!confirm("Process automatic Yoco refund? The customer will be notified via WhatsApp and email.")) return;
+    var booking = refunds.find(b => b.id === id);
+    var amount = booking ? getRefundAmount(booking) : 0;
+    var isPartial = booking && amount < Number(booking.total_amount || 0);
+    var msg = isPartial
+      ? `Process partial Yoco refund of R${amount.toFixed(2)} (out of R${Number(booking.total_amount).toFixed(2)} paid)? The customer will be notified.`
+      : "Process automatic Yoco refund? The customer will be notified via WhatsApp and email.";
+    if (!confirm(msg)) return;
     setProcessing(id);
     try {
+      // Save the (possibly edited) refund amount first
+      await saveRefundAmount(id, amount);
       var r = await fetch(SU + "/functions/v1/process-refund", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: "Bearer " + SK },
@@ -58,8 +77,18 @@ export default function Refunds() {
   }
 
   async function manualRefund(id: string) {
-    if (!confirm("Mark as manually refunded?")) return;
-    await supabase.from("bookings").update({ refund_status: "PROCESSED", refund_notes: "Manual refund" }).eq("id", id);
+    var booking = refunds.find(b => b.id === id);
+    var amount = booking ? getRefundAmount(booking) : 0;
+    var isPartial = booking && amount < Number(booking.total_amount || 0);
+    var msg = isPartial
+      ? `Mark partial refund of R${amount.toFixed(2)} (out of R${Number(booking.total_amount).toFixed(2)} paid) as manually refunded?`
+      : "Mark as manually refunded?";
+    if (!confirm(msg)) return;
+    await saveRefundAmount(id, amount);
+    await supabase.from("bookings").update({
+      refund_status: "PROCESSED",
+      refund_notes: isPartial ? `Partial manual refund — R${amount.toFixed(2)} of R${Number(booking.total_amount).toFixed(2)}` : "Manual refund",
+    }).eq("id", id);
     load();
   }
 
@@ -123,7 +152,26 @@ export default function Refunds() {
                   </div>
                   <div className="flex items-center gap-3">
                     <div className="text-right">
-                      <p className="text-2xl font-bold text-red-600">R{b.refund_amount}</p>
+                      <div className="flex items-center gap-1 justify-end">
+                        <span className="text-lg font-bold text-red-600">R</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          max={Number(b.total_amount || 0)}
+                          value={editedAmounts[b.id] !== undefined ? editedAmounts[b.id] : String(b.refund_amount || 0)}
+                          onChange={e => setEditedAmounts({ ...editedAmounts, [b.id]: e.target.value })}
+                          className="w-28 text-right text-2xl font-bold text-red-600 border border-gray-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 bg-red-50/50"
+                        />
+                      </div>
+                      {Number(b.total_amount || 0) > 0 && (
+                        <p className="text-[11px] text-gray-400 mt-1">
+                          of R{Number(b.total_amount).toFixed(2)} paid
+                          {editedAmounts[b.id] !== undefined && parseFloat(editedAmounts[b.id]) < Number(b.total_amount) && (
+                            <span className="ml-1 text-amber-600 font-medium">(partial)</span>
+                          )}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-400">{b.refund_notes}</p>
                     </div>
                     <div className="flex flex-col gap-2">

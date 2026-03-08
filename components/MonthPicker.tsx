@@ -36,7 +36,7 @@ export function MonthPicker({ value, onChange, className = "" }: MonthPickerProp
             <button
                 type="button"
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex items-center justify-between px-3 py-1.5 text-sm bg-white border border-[var(--ck-border-subtle)] rounded-lg shadow-sm hover:bg-gray-50 outline-none w-full min-w-[150px] ${className}`}
+                className={`flex items-center justify-between px-3 py-1.5 text-sm bg-[var(--ck-surface)] border border-[var(--ck-border-subtle)] rounded-lg shadow-sm hover:bg-[var(--ck-border-subtle)] outline-none w-full min-w-[150px] ${className}`}
             >
                 <span className={value ? "text-[var(--ck-text-strong)] font-medium" : "text-[var(--ck-text-muted)]"}>
                     {value ? format(validDate, "MMMM yyyy") : "Select month"}
@@ -45,13 +45,13 @@ export function MonthPicker({ value, onChange, className = "" }: MonthPickerProp
             </button>
 
             {isOpen && (
-                <div className="absolute z-[9999] top-full mt-1 right-0 sm:left-auto bg-white border border-[var(--ck-border-subtle)] rounded-xl shadow-xl w-64 p-3 origin-top-right">
+                <div className="absolute z-[9999] top-full mt-1 right-0 sm:left-auto bg-[var(--ck-surface)] border border-[var(--ck-border-subtle)] rounded-xl shadow-xl w-64 p-3 origin-top-right">
                     <div className="flex items-center justify-between mb-4 px-1">
-                        <button type="button" onClick={() => setViewYear(y => y - 1)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
+                        <button type="button" onClick={() => setViewYear(y => y - 1)} className="p-1.5 rounded-md hover:bg-[var(--ck-border-subtle)] text-[var(--ck-text-muted)] transition-colors">
                             <ChevronLeft className="w-4 h-4" />
                         </button>
                         <span className="font-bold text-[var(--ck-text-strong)] text-sm">{viewYear}</span>
-                        <button type="button" onClick={() => setViewYear(y => y + 1)} className="p-1.5 rounded-md hover:bg-gray-100 text-gray-500 transition-colors">
+                        <button type="button" onClick={() => setViewYear(y => y + 1)} className="p-1.5 rounded-md hover:bg-[var(--ck-border-subtle)] text-[var(--ck-text-muted)] transition-colors">
                             <ChevronRight className="w-4 h-4" />
                         </button>
                     </div>
@@ -69,8 +69,8 @@ export function MonthPicker({ value, onChange, className = "" }: MonthPickerProp
                                         setIsOpen(false);
                                     }}
                                     className={`py-2 text-sm font-medium rounded-lg transition-colors ${isSelected
-                                            ? "bg-[#0f172a] text-white shadow-sm"
-                                            : "text-gray-700 hover:bg-gray-100"
+                                        ? "bg-[var(--ck-accent)] text-white shadow-sm"
+                                        : "text-[var(--ck-text)] hover:bg-[var(--ck-border-subtle)]"
                                         }`}
                                 >
                                     {m}

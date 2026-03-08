@@ -12,7 +12,8 @@ export default function SignOutButton({ variant = "sidebar" }: { variant?: "side
     return (
       <button
         onClick={logout}
-        className="px-3 py-1.5 text-xs font-medium text-[var(--ck-text-muted)] hover:text-[var(--ck-text-strong)] rounded-lg border border-gray-200"
+        className="px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors"
+        style={{ color: "var(--ck-text-muted)", borderColor: "var(--ck-border-strong)" }}
       >
         Sign Out
       </button>
@@ -22,7 +23,8 @@ export default function SignOutButton({ variant = "sidebar" }: { variant?: "side
   return (
     <button
       onClick={logout}
-      className="w-full text-left px-4 py-3 text-xs font-medium text-[var(--ck-sidebar-muted)] hover:text-white hover:bg-[var(--ck-sidebar-hover)] transition-colors"
+      className="text-left px-4 py-3 text-xs font-medium transition-colors"
+      style={{ color: "var(--ck-sidebar-muted)" }}
     >
       Sign Out
     </button>

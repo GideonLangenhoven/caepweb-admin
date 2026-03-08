@@ -337,6 +337,7 @@ export default function Invoices() {
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [openActions, setOpenActions] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<"booking_desc" | "booking_asc" | "created_desc" | "created_asc">("booking_desc");
   const [exactDate, setExactDate] = useState("");
 
@@ -446,18 +447,40 @@ export default function Invoices() {
   async function handleResend(inv: InvoiceRecord) {
     setResendingId(inv.id);
     try {
-      const body = {
-        invoice_id: inv.id,
-        booking_id: inv.booking_id || null,
-        invoice_number: invoiceNumber(inv),
-        invoice_type: "PRO_FORMA",
-        resend: true,
-      };
-      const res = await supabase.functions.invoke("send-invoice", { body });
+      const email = asText(inv.customer_email, "");
+      if (!email) {
+        alert("No customer email found for this invoice.");
+        setResendingId(null);
+        return;
+      }
+      const invNo = invoiceNumber(inv);
+      const { adults } = counts(inv);
+      const pay = payment(inv);
+
+      const res = await supabase.functions.invoke("send-email", {
+        body: {
+          type: "INVOICE",
+          data: {
+            email,
+            customer_name: asText(inv.customer_name, "Customer"),
+            customer_email: email,
+            invoice_number: invNo,
+            invoice_date: formatDate(inv.created_at || inv.tour_date),
+            tour_name: asText(inv.tour_name, "Kayak Booking"),
+            tour_date: formatDate(inv.tour_date || inv.created_at),
+            qty: adults || asNumber(inv.qty, 1),
+            unit_price: money(adults > 0 ? pay.total / adults : pay.total),
+            subtotal: money(pay.subtotal),
+            total_amount: money(pay.total),
+            payment_method: asText(inv.payment_method, "Online"),
+            payment_reference: invNo,
+          },
+        },
+      });
       if (res.error) {
         alert("Resend failed: " + res.error.message);
       } else {
-        alert("Invoice resend queued.");
+        alert("Invoice resent to " + email);
       }
     } catch (err: unknown) {
       alert("Resend failed: " + asText((err as Error)?.message, String(err)));
@@ -525,15 +548,15 @@ export default function Invoices() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-3 text-left font-medium text-gray-600">Invoice #</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Booking #</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Booking #</th>
                       <th className="p-3 text-left font-medium text-gray-600">Customer</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Service</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Booking Date</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Service</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 xl:table-cell">Booking Date</th>
                       <th className="p-3 text-left font-medium text-gray-600">Total</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Paid</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 md:table-cell">Paid</th>
                       <th className="p-3 text-left font-medium text-gray-600">Due</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Created</th>
-                      <th className="p-3 text-left font-medium text-gray-600">Actions</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 xl:table-cell">Created</th>
+                      <th className="hidden p-3 text-left font-medium text-gray-600 lg:table-cell">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -542,38 +565,36 @@ export default function Invoices() {
                       const isBusy = busyId === inv.id || resendingId === inv.id;
                       return (
                         <tr key={inv.id} className="border-t border-gray-100 hover:bg-gray-50">
-                          <td className="p-3 font-mono font-bold text-blue-600">{invoiceNumber(inv)}</td>
-                          <td className="p-3 font-mono text-xs">{bookingRef(inv)}</td>
+                          <td className="p-3 font-mono font-bold text-blue-600">
+                            <button
+                              type="button"
+                              className="flex items-center gap-1 text-left lg:pointer-events-none"
+                              onClick={() => setOpenActions(openActions === inv.id ? null : inv.id)}
+                            >
+                              <span className="inline-block w-3 text-gray-400 transition-transform lg:hidden" style={{ transform: openActions === inv.id ? "rotate(90deg)" : "none" }}>›</span>
+                              <span>{invoiceNumber(inv)}</span>
+                            </button>
+                            {openActions === inv.id && (
+                              <div className="mt-2 flex flex-wrap gap-2 lg:hidden">
+                                <button onClick={() => handleDownload(inv)} disabled={isBusy} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50">Download</button>
+                                <button onClick={() => handlePrint(inv)} disabled={isBusy} className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50">Print / PDF</button>
+                                <button onClick={() => handleResend(inv)} disabled={isBusy} className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{resendingId === inv.id ? "Resending..." : "Resend"}</button>
+                              </div>
+                            )}
+                          </td>
+                          <td className="hidden p-3 font-mono text-xs lg:table-cell">{bookingRef(inv)}</td>
                           <td className="p-3">{asText(inv.customer_name, "-")}<br /><span className="text-xs text-gray-400">{asText(inv.customer_email, "")}</span></td>
-                          <td className="p-3">{asText(inv.tour_name, "-")}</td>
-                          <td className="p-3 text-xs">{formatDate(inv.booking_created_at || inv.tour_date)}</td>
+                          <td className="hidden p-3 lg:table-cell">{asText(inv.tour_name, "-")}</td>
+                          <td className="hidden p-3 text-xs xl:table-cell">{formatDate(inv.booking_created_at || inv.tour_date)}</td>
                           <td className="p-3 font-medium">R{money(pay.total)}</td>
-                          <td className="p-3">R{money(pay.amountPaid)}</td>
+                          <td className="hidden p-3 md:table-cell">R{money(pay.amountPaid)}</td>
                           <td className={`p-3 font-semibold ${pay.balanceDue > 0 ? "text-amber-700" : "text-emerald-700"}`}>R{money(pay.balanceDue)}</td>
-                          <td className="p-3 text-xs">{formatDate(inv.created_at)}</td>
-                          <td className="p-3">
+                          <td className="hidden p-3 text-xs xl:table-cell">{formatDate(inv.created_at)}</td>
+                          <td className="hidden p-3 lg:table-cell">
                             <div className="flex flex-wrap gap-2">
-                              <button
-                                onClick={() => handleDownload(inv)}
-                                disabled={isBusy}
-                                className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50"
-                              >
-                                Download
-                              </button>
-                              <button
-                                onClick={() => handlePrint(inv)}
-                                disabled={isBusy}
-                                className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50"
-                              >
-                                Print / PDF
-                              </button>
-                              <button
-                                onClick={() => handleResend(inv)}
-                                disabled={isBusy}
-                                className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-                              >
-                                {resendingId === inv.id ? "Resending..." : "Resend"}
-                              </button>
+                              <button onClick={() => handleDownload(inv)} disabled={isBusy} className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-xs font-medium hover:bg-gray-50 disabled:opacity-50">Download</button>
+                              <button onClick={() => handlePrint(inv)} disabled={isBusy} className="rounded-lg bg-gray-900 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50">Print / PDF</button>
+                              <button onClick={() => handleResend(inv)} disabled={isBusy} className="rounded-lg bg-blue-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{resendingId === inv.id ? "Resending..." : "Resend"}</button>
                             </div>
                           </td>
                         </tr>
@@ -582,15 +603,15 @@ export default function Invoices() {
 
                     <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold text-gray-700">
                       <td className="p-3 text-xs text-gray-500">Totals:</td>
+                      <td className="hidden p-3 lg:table-cell"></td>
                       <td className="p-3"></td>
-                      <td className="p-3"></td>
-                      <td className="p-3"></td>
-                      <td className="p-3"></td>
+                      <td className="hidden p-3 lg:table-cell"></td>
+                      <td className="hidden p-3 xl:table-cell"></td>
                       <td className="p-3">R{money(day.total)}</td>
-                      <td className="p-3">R{money(day.paid)}</td>
+                      <td className="hidden p-3 md:table-cell">R{money(day.paid)}</td>
                       <td className={`p-3 ${day.due > 0 ? "text-amber-700" : "text-emerald-700"}`}>R{money(day.due)}</td>
-                      <td className="p-3"></td>
-                      <td className="p-3"></td>
+                      <td className="hidden p-3 xl:table-cell"></td>
+                      <td className="hidden p-3 lg:table-cell"></td>
                     </tr>
                   </tbody>
                 </table>

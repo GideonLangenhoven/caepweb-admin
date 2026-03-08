@@ -9,7 +9,7 @@ async function sha256(str: string) {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
-var PUBLIC_PATHS = ["/change-password"];
+var PUBLIC_PATHS = ["/change-password", "/operators", "/case-study/cape-kayak", "/compare/manual-vs-disconnected-tools"];
 var SESSION_TIMEOUT = 12 * 60 * 60 * 1000;
 var MAX_ATTEMPTS = 5;
 var LOCKOUT_DURATION = 30 * 60 * 1000;
@@ -186,7 +186,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           },
         },
       });
-    } catch {}
+    } catch { }
 
     setResetSent(true);
   }

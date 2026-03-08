@@ -49,6 +49,7 @@ export default function Reports() {
   const [filterStatus, setFilterStatus] = useState("ALL");
   const [sortCol, setSortCol] = useState<"created_at" | "slot_time" | "total_amount">("slot_time");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [activeTab, setActiveTab] = useState<"bookings" | "financials" | "marketing" | "attendance">("bookings");
 
   async function loadReport() {
     setLoading(true);
@@ -74,7 +75,7 @@ export default function Reports() {
 
     let query = supabase
       .from("bookings")
-      .select("id, customer_name, phone, email, qty, unit_price, total_amount, original_total, discount_type, discount_percent, status, yoco_payment_id, source, created_at, tours(name), slots(start_time)")
+      .select("id, customer_name, phone, email, qty, unit_price, total_amount, original_total, discount_type, discount_percent, status, yoco_payment_id, source, created_at, checked_in, checked_in_at, tours(name), slots(start_time)")
       .eq("business_id", businessId);
 
     if (filterBy === "slot" && slotIds) {
@@ -138,6 +139,93 @@ export default function Reports() {
   }
 
   function downloadCSV() {
+    if (activeTab === "attendance") {
+      const activeBookings = filtered.filter(b => b.status !== "CANCELLED");
+      const headers = ["Tour Date", "Time", "Tour", "Customer", "Phone", "Pax", "Checked In", "Checked In At", "Status"];
+      const rows = activeBookings.map(b => [
+        b.slots?.start_time ? fmtDate(b.slots.start_time) : "",
+        b.slots?.start_time ? fmtTime(b.slots.start_time) : "",
+        b.tours?.name || "",
+        b.customer_name || "",
+        b.phone || "",
+        b.qty || 0,
+        b.checked_in ? "Yes" : "No",
+        b.checked_in_at ? fmtDateTime(b.checked_in_at) : "",
+        b.status || ""
+      ]);
+      const csv = [headers, ...rows]
+        .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `attendance-${startDate}-to-${endDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (activeTab === "financials") {
+      const headers = ["Transaction Date", "Booking Ref", "Gateway Ref", "Customer Name", "Subtotal", "Discount", "Total Amount", "Status"];
+      const rows = filtered.map(b => [
+        fmtDateTime(b.created_at),
+        b.id.substring(0, 8).toUpperCase(),
+        b.yoco_payment_id || "",
+        b.customer_name || "",
+        Number(b.original_total || b.total_amount || 0).toFixed(2),
+        Number((b.original_total || b.total_amount || 0) - (b.total_amount || 0)).toFixed(2),
+        Number(b.total_amount || 0).toFixed(2),
+        b.status || ""
+      ]);
+      const csv = [headers, ...rows]
+        .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `financials-${startDate}-to-${endDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    if (activeTab === "marketing") {
+      const marketingData = Object.values(
+        filtered.reduce((acc: any, b: any) => {
+          const src = b.source || "UNKNOWN";
+          if (!acc[src]) acc[src] = { source: src, count: 0, pax: 0, revenue: 0 };
+          acc[src].count++;
+          acc[src].pax += b.qty;
+          if (["PAID", "COMPLETED", "CONFIRMED"].includes(b.status)) {
+            acc[src].revenue += Number(b.total_amount || 0);
+          }
+          return acc;
+        }, {})
+      );
+
+      const headers = ["Source", "Total Bookings", "Total Pax", "Revenue Generated", "Avg. Order Value"];
+      const rows = marketingData.map((d: any) => [
+        d.source,
+        d.count,
+        d.pax,
+        Number(d.revenue).toFixed(2),
+        Number(d.count > 0 ? d.revenue / d.count : 0).toFixed(2)
+      ]);
+      const csv = [headers, ...rows]
+        .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))
+        .join("\n");
+      const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `marketing-${startDate}-to-${endDate}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+
     const headers = [
       "Ref", "Booked At", "Customer Name", "Phone", "Email",
       "Tour", "Slot Date", "Slot Time",
@@ -175,19 +263,144 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   }
 
+  async function downloadPDF() {
+    const { default: jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+
+    const doc = new jsPDF("landscape");
+    doc.setFontSize(14);
+
+    let title = "";
+    let headers: string[] = [];
+    let rows: any[][] = [];
+
+    if (activeTab === "attendance") {
+      const activeBookings = filtered.filter(b => b.status !== "CANCELLED");
+      title = `Attendance Report (${startDate} to ${endDate})`;
+      headers = ["Date", "Time", "Tour", "Customer", "Pax", "Checked In", "Status"];
+      rows = activeBookings.map(b => [
+        b.slots?.start_time ? fmtDate(b.slots.start_time) : "—",
+        b.slots?.start_time ? fmtTime(b.slots.start_time) : "—",
+        b.tours?.name || "—",
+        b.customer_name || "—",
+        b.qty,
+        b.checked_in ? "Yes" : "No",
+        b.status
+      ]);
+    } else if (activeTab === "financials") {
+      title = `Financial Report (${startDate} to ${endDate})`;
+      headers = ["Date", "Booking Ref", "Gateway Ref", "Customer", "Subtotal", "Discount", "Net Paid", "Status"];
+      rows = filtered.map(b => [
+        fmtDateTime(b.created_at),
+        b.id.substring(0, 8).toUpperCase(),
+        b.yoco_payment_id || "—",
+        b.customer_name || "—",
+        fmtCurrency(Number(b.original_total || b.total_amount || 0)),
+        fmtCurrency(Number((b.original_total || b.total_amount || 0) - (b.total_amount || 0))),
+        fmtCurrency(Number(b.total_amount || 0)),
+        b.status
+      ]);
+    } else if (activeTab === "marketing") {
+      title = `Marketing Report (${startDate} to ${endDate})`;
+      headers = ["Source", "Bookings", "Total Pax", "Revenue", "Avg. Order Value"];
+
+      const marketingData = Object.values(
+        filtered.reduce((acc: any, b: any) => {
+          const src = b.source || "UNKNOWN";
+          if (!acc[src]) acc[src] = { source: src, count: 0, pax: 0, revenue: 0 };
+          acc[src].count++;
+          acc[src].pax += b.qty;
+          if (["PAID", "COMPLETED", "CONFIRMED"].includes(b.status)) {
+            acc[src].revenue += Number(b.total_amount || 0);
+          }
+          return acc;
+        }, {})
+      );
+
+      rows = marketingData.map((d: any) => [
+        d.source,
+        d.count,
+        d.pax,
+        fmtCurrency(d.revenue),
+        fmtCurrency(d.count > 0 ? d.revenue / d.count : 0)
+      ]);
+    } else {
+      title = `Bookings Report (${startDate} to ${endDate})`;
+      headers = ["Ref", "Date", "Customer", "Tour", "Date/Time", "Qty", "Total", "Status"];
+      rows = filtered.map(b => [
+        b.id.substring(0, 8).toUpperCase(),
+        fmtDate(b.created_at),
+        b.customer_name || "—",
+        b.tours?.name || "—",
+        b.slots?.start_time ? fmtDate(b.slots.start_time) : "—",
+        b.qty,
+        fmtCurrency(Number(b.total_amount || 0)),
+        b.status
+      ]);
+    }
+
+    doc.text(title, 14, 15);
+
+    autoTable(doc, {
+      head: [headers],
+      body: rows,
+      startY: 20,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [4, 120, 87] }, // Emerald-600
+    });
+
+    doc.save(`${activeTab}-${startDate}-to-${endDate}.pdf`);
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold">📊 Reports</h2>
-          <p className="text-sm text-gray-500">All bookings — filter by tour date or booking date, download as CSV.</p>
+          <p className="text-sm text-gray-500">All bookings — filter by tour date or booking date, download as CSV or PDF.</p>
         </div>
+        <div className="flex gap-2">
+          <button
+            onClick={downloadCSV}
+            disabled={filtered.length === 0}
+            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+          >
+            ⬇ CSV ({filtered.length})
+          </button>
+          <button
+            onClick={downloadPDF}
+            disabled={filtered.length === 0}
+            className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-600 hover:bg-emerald-50 disabled:opacity-40"
+          >
+            📄 PDF
+          </button>
+        </div>
+      </div>
+
+      <div className="flex border-b border-gray-200">
         <button
-          onClick={downloadCSV}
-          disabled={filtered.length === 0}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+          onClick={() => setActiveTab("bookings")}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === "bookings" ? "border-b-2 border-emerald-600 text-emerald-600" : "text-gray-500 hover:text-gray-700"}`}
         >
-          ⬇ Download CSV ({filtered.length})
+          Bookings
+        </button>
+        <button
+          onClick={() => setActiveTab("financials")}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === "financials" ? "border-b-2 border-emerald-600 text-emerald-600" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Financials
+        </button>
+        <button
+          onClick={() => setActiveTab("marketing")}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === "marketing" ? "border-b-2 border-emerald-600 text-emerald-600" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Marketing
+        </button>
+        <button
+          onClick={() => setActiveTab("attendance")}
+          className={`px-4 py-2 text-sm font-medium ${activeTab === "attendance" ? "border-b-2 border-emerald-600 text-emerald-600" : "text-gray-500 hover:text-gray-700"}`}
+        >
+          Attendance
         </button>
       </div>
 
@@ -250,14 +463,177 @@ export default function Reports() {
         </div>
       ) : filtered.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-white p-8 text-center text-gray-500">
-          No bookings found for this period.
+          No records found for this period.
+        </div>
+      ) : activeTab === "financials" ? (
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                <th className="p-3">Transaction Date</th>
+                <th className="p-3">Booking Ref</th>
+                <th className="p-3">Gateway Ref</th>
+                <th className="p-3">Customer</th>
+                <th className="p-3 text-right">Subtotal</th>
+                <th className="p-3 text-right text-amber-600">Discounts</th>
+                <th className="p-3 text-right text-emerald-700">Net Paid</th>
+                <th className="p-3 text-center">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filtered.map(b => {
+                const sub = Number(b.original_total || b.total_amount || 0);
+                const tot = Number(b.total_amount || 0);
+                const disc = sub - tot;
+                return (
+                  <tr key={b.id} className="hover:bg-gray-50/60">
+                    <td className="p-3 font-medium text-gray-700 whitespace-nowrap">{fmtDateTime(b.created_at)}</td>
+                    <td className="p-3 font-mono text-xs text-gray-500">{b.id.substring(0, 8).toUpperCase()}</td>
+                    <td className="p-3 font-mono text-xs text-gray-400">{b.yoco_payment_id || "—"}</td>
+                    <td className="p-3 min-w-[150px]">{b.customer_name || "—"}</td>
+                    <td className="p-3 text-right text-gray-500">{fmtCurrency(sub)}</td>
+                    <td className="p-3 text-right text-amber-600">{disc > 0 ? "-" + fmtCurrency(disc) : "—"}</td>
+                    <td className="p-3 text-right font-bold text-emerald-700">{fmtCurrency(tot)}</td>
+                    <td className="p-3 text-center">
+                      <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[b.status] || "bg-gray-100 text-gray-600"}`}>
+                        {b.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                <td colSpan={6} className="p-3 text-right text-gray-500">Total Net Revenue</td>
+                <td className="p-3 text-right text-emerald-700 font-bold">{fmtCurrency(summary.revenue)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      ) : activeTab === "attendance" ? (
+        (() => {
+          const activeBookings = filtered.filter(b => b.status !== "CANCELLED");
+          const totalPax = activeBookings.reduce((s, b) => s + Number(b.qty || 0), 0);
+          const checkedInPax = activeBookings.filter(b => b.checked_in).reduce((s, b) => s + Number(b.qty || 0), 0);
+          const noShowPax = totalPax - checkedInPax;
+          return (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <p className="text-xs text-gray-500">Total Pax</p>
+                  <p className="text-xl font-bold text-gray-800">{totalPax}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <p className="text-xs text-gray-500">Checked In</p>
+                  <p className="text-xl font-bold text-emerald-700">{checkedInPax}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <p className="text-xs text-gray-500">No Show</p>
+                  <p className="text-xl font-bold text-red-600">{noShowPax}</p>
+                </div>
+                <div className="rounded-xl border border-gray-200 bg-white p-4 text-center">
+                  <p className="text-xs text-gray-500">Attendance Rate</p>
+                  <p className="text-xl font-bold text-gray-800">{totalPax > 0 ? Math.round((checkedInPax / totalPax) * 100) : 0}%</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                      <th className="p-3">Tour Date</th>
+                      <th className="p-3">Time</th>
+                      <th className="p-3">Tour</th>
+                      <th className="p-3">Customer</th>
+                      <th className="hidden p-3 md:table-cell">Phone</th>
+                      <th className="p-3 text-right">Pax</th>
+                      <th className="p-3 text-center">Checked In</th>
+                      <th className="hidden p-3 lg:table-cell">Check-in Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {activeBookings.map(b => (
+                      <tr key={b.id} className={`hover:bg-gray-50/60 ${b.checked_in ? "bg-emerald-50/40" : ""}`}>
+                        <td className="p-3 whitespace-nowrap font-medium">{b.slots?.start_time ? fmtDate(b.slots.start_time) : "—"}</td>
+                        <td className="p-3 whitespace-nowrap">{b.slots?.start_time ? fmtTime(b.slots.start_time) : "—"}</td>
+                        <td className="p-3 text-gray-600">{b.tours?.name || "—"}</td>
+                        <td className="p-3 font-medium">{b.customer_name || "—"}</td>
+                        <td className="hidden p-3 md:table-cell text-xs text-gray-500">{b.phone || "—"}</td>
+                        <td className="p-3 text-right font-semibold">{b.qty}</td>
+                        <td className="p-3 text-center">
+                          <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold ${b.checked_in ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-600"}`}>
+                            {b.checked_in ? "Present" : "No Show"}
+                          </span>
+                        </td>
+                        <td className="hidden p-3 lg:table-cell text-xs text-gray-400 whitespace-nowrap">
+                          {b.checked_in_at ? fmtDateTime(b.checked_in_at) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                      <td colSpan={5} className="p-3 text-gray-500 text-xs">Totals ({activeBookings.length} bookings)</td>
+                      <td className="p-3 text-right">{totalPax}</td>
+                      <td className="p-3 text-center text-emerald-700">{checkedInPax} present</td>
+                      <td className="hidden p-3 lg:table-cell"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          );
+        })()
+      ) : activeTab === "marketing" ? (
+        <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600">
+                <th className="p-3">Source Name</th>
+                <th className="p-3 text-right">Bookings</th>
+                <th className="p-3 text-right">Total Pax</th>
+                <th className="p-3 text-right">Revenue</th>
+                <th className="p-3 text-right">Avg Order Value</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {Object.values(filtered.reduce((acc: any, b: any) => {
+                const src = b.source || "UNKNOWN";
+                if (!acc[src]) acc[src] = { source: src, count: 0, pax: 0, revenue: 0 };
+                acc[src].count++;
+                acc[src].pax += b.qty;
+                if (["PAID", "COMPLETED", "CONFIRMED"].includes(b.status)) {
+                  acc[src].revenue += Number(b.total_amount || 0);
+                }
+                return acc;
+              }, {})).map((d: any) => (
+                <tr key={d.source} className="hover:bg-gray-50/60">
+                  <td className="p-3 font-medium text-gray-700">{d.source}</td>
+                  <td className="p-3 text-right">{d.count}</td>
+                  <td className="p-3 text-right">{d.pax} pax</td>
+                  <td className="p-3 text-right font-bold text-emerald-700">{fmtCurrency(d.revenue)}</td>
+                  <td className="p-3 text-right text-gray-500">{fmtCurrency(d.count > 0 ? d.revenue / d.count : 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                <td className="p-3 text-gray-500">Totals</td>
+                <td className="p-3 text-right">{summary.total}</td>
+                <td className="p-3 text-right">{summary.pax} pax</td>
+                <td className="p-3 text-right text-emerald-700 font-bold">{fmtCurrency(summary.revenue)}</td>
+                <td className="p-3 text-right text-gray-500">{fmtCurrency(summary.total > 0 ? summary.revenue / summary.total : 0)}</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs font-semibold text-gray-600">
-                <th className="p-3">Ref</th>
+                <th className="hidden p-3 md:table-cell">Ref</th>
                 <th className="p-3 cursor-pointer hover:text-blue-600" onClick={() => toggleSort("slot_time")}>
                   Tour Date {sortIcon("slot_time")}
                 </th>
@@ -280,7 +656,7 @@ export default function Reports() {
                 const hasDiscount = b.discount_type && b.discount_type !== "none";
                 return (
                   <tr key={b.id} className="hover:bg-gray-50/60">
-                    <td className="p-3 font-mono text-xs text-gray-500">{b.id.substring(0, 8).toUpperCase()}</td>
+                    <td className="hidden p-3 font-mono text-xs text-gray-500 md:table-cell">{b.id.substring(0, 8).toUpperCase()}</td>
                     <td className="p-3 whitespace-nowrap">
                       {b.slots?.start_time ? (
                         <span>
@@ -331,10 +707,16 @@ export default function Reports() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                <td colSpan={5} className="p-3 text-gray-500 text-xs">Totals ({filtered.length} bookings)</td>
+                <td className="hidden md:table-cell p-3"></td>
+                <td className="p-3 text-gray-500 text-xs">Totals ({filtered.length})</td>
+                <td className="p-3"></td>
+                <td className="hidden p-3 md:table-cell"></td>
+                <td className="hidden p-3 lg:table-cell"></td>
                 <td className="p-3 text-right">{summary.pax}</td>
                 <td className="p-3 text-right text-emerald-700">{fmtCurrency(summary.revenue)}</td>
-                <td colSpan={3} className="p-3 text-xs text-gray-400">paid/confirmed/completed only</td>
+                <td className="hidden p-3 lg:table-cell"></td>
+                <td className="p-3"></td>
+                <td className="hidden p-3 xl:table-cell"></td>
               </tr>
             </tfoot>
           </table>
