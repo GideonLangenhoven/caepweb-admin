@@ -137,6 +137,7 @@ export default function Bookings() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionBookingId, setActionBookingId] = useState<string | null>(null);
+  const [cancellingWeatherId, setCancellingWeatherId] = useState<string | null>(null);
   const [resendingInvoiceId, setResendingInvoiceId] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState(() => {
     const d = new Date();
@@ -519,6 +520,89 @@ export default function Bookings() {
     else loadBookings();
   }
 
+  async function cancelSlotWeather(group: SlotGroup) {
+    const activeBks = group.bookings.filter(b => !["CANCELLED", "REFUNDED"].includes(b.status));
+    const slotId = group.bookings[0]?.slot_id;
+    if (!slotId) return;
+
+    if (!confirm(`Cancel "${group.timeLabel}" due to weather?\n\nThis will:\n• Close the slot\n• Cancel all bookings on this slot\n• Notify customers via WhatsApp & email to manage their booking (reschedule/voucher/refund)`)) return;
+
+    setCancellingWeatherId(slotId);
+    try {
+      await supabase.from("slots").update({ status: "CLOSED" }).eq("id", slotId);
+
+      const affected = activeBks;
+      for (const b of affected) {
+        const isPaidBooking = ["PAID", "CONFIRMED"].includes(b.status);
+        const refundAmount = isPaidBooking ? Number(b.total_amount || 0) : 0;
+
+        await supabase.from("bookings").update({
+          status: "CANCELLED",
+          cancellation_reason: "Weather cancellation",
+          cancelled_at: new Date().toISOString(),
+        }).eq("id", b.id);
+
+        const slotData = await supabase.from("slots").select("booked, held").eq("id", slotId).single();
+        if (slotData.data) {
+          await supabase.from("slots").update({
+            booked: Math.max(0, slotData.data.booked - b.qty),
+            held: Math.max(0, (slotData.data.held || 0) - (b.status === "HELD" ? b.qty : 0)),
+          }).eq("id", slotId);
+        }
+
+        await supabase.from("holds").update({ status: "CANCELLED" }).eq("booking_id", b.id).eq("status", "ACTIVE");
+
+        const ref = b.id.substring(0, 8).toUpperCase();
+        const tourName = (b as any).tours?.name || "Tour";
+        const startTime = (b as any).slots?.start_time
+          ? new Date((b as any).slots.start_time).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" })
+          : "";
+
+        if (b.phone) {
+          try {
+            await fetch(SU + "/functions/v1/send-whatsapp-text", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", Authorization: "Bearer " + SK },
+              body: JSON.stringify({
+                to: b.phone,
+                message: "⛈ *Trip Cancelled — Weather*\n\n" +
+                  "Hi " + (b.customer_name?.split(" ")[0] || "there") + ", unfortunately your " + tourName + " on " + startTime +
+                  " has been cancelled due to weather conditions.\n\n" +
+                  "📋 Ref: " + ref + "\n\n" +
+                  "You will receive an email shortly with a link to manage your booking, where you can easily reschedule, get a voucher, or request a refund. 🛶",
+              }),
+            });
+          } catch (e) { console.error("WA notify err:", e); }
+        }
+
+        if (b.email) {
+          try {
+            await supabase.functions.invoke("send-email", {
+              body: {
+                type: "CANCELLATION",
+                data: {
+                  email: b.email,
+                  customer_name: b.customer_name,
+                  ref,
+                  tour_name: tourName,
+                  start_time: startTime,
+                  reason: "weather conditions",
+                  refund_amount: isPaidBooking && refundAmount > 0 ? refundAmount : null,
+                },
+              },
+            });
+          } catch (e) { console.error("Email notify err:", e); }
+        }
+      }
+
+      alert(`Weather cancellation complete.\n\n• ${affected.length} booking(s) cancelled.\nCustomers have been emailed links to manage their own reschedules or refunds.`);
+      loadBookings();
+    } catch (err: any) {
+      alert("Error cancelling slot: " + err.message);
+    }
+    setCancellingWeatherId(null);
+  }
+
   function checkRefundLimit(): boolean {
     const key = "ck_refund_log";
     const now = Date.now();
@@ -844,6 +928,8 @@ export default function Bookings() {
                             onSendPaymentLink={sendPaymentLink}
                             onWhatsApp={openWhatsApp}
                             onView={(b) => router.push(`/bookings/${b.id}`)}
+                            onCancelSlot={cancelSlotWeather}
+                            cancellingWeatherId={cancellingWeatherId}
                           />
                         );
                       })}
@@ -1073,6 +1159,8 @@ function SlotRows({
   onSendPaymentLink,
   onWhatsApp,
   onView,
+  onCancelSlot,
+  cancellingWeatherId,
 }: {
   slot: SlotGroup;
   services: string;
@@ -1090,6 +1178,8 @@ function SlotRows({
   onSendPaymentLink: (b: Booking) => void;
   onWhatsApp: (b: Booking) => void;
   onView: (b: Booking) => void;
+  onCancelSlot: (group: SlotGroup) => void;
+  cancellingWeatherId: string | null;
 }) {
   const [openActions, setOpenActions] = useState<string | null>(null);
   useEffect(() => {
@@ -1114,7 +1204,16 @@ function SlotRows({
         <td className="p-3 text-right">{fmtCurrency(slot.totalPrice)}</td>
         <td className="p-3 text-right">{fmtCurrency(slot.totalPaid)}</td>
         <td className={`p-3 text-right font-semibold ${slot.totalDue > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(slot.totalDue)}</td>
-        <td className="hidden p-3 lg:table-cell"></td>
+        <td className="hidden p-3 lg:table-cell">
+          <button
+            onClick={(e) => { e.stopPropagation(); onCancelSlot(slot); }}
+            disabled={cancellingWeatherId === slot.bookings[0]?.slot_id}
+            className="px-2 py-1 bg-red-50 text-red-600 font-medium rounded text-xs hover:bg-red-100 border border-red-200 disabled:opacity-50 transition-colors"
+            title="Cancel Slot (Weather)"
+          >
+            {cancellingWeatherId === slot.bookings[0]?.slot_id ? "Cancelling..." : "Cancel Slot"}
+          </button>
+        </td>
       </tr>
 
       {isOpen &&
