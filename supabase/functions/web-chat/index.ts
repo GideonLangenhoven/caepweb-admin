@@ -12,11 +12,13 @@ function fmtDate(iso) { var d = new Date(iso); if (isNaN(d.getTime())) return "?
 function fmtTime(iso) { var d = new Date(iso); if (isNaN(d.getTime())) return "?"; return d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" }); }
 function dateKey(iso) { var d = new Date(iso); return d.toISOString().split("T")[0]; }
 function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-async function gemChat(hist, msg) {
+async function gemChat(hist, msg, toursList) {
   try {
     var c = []; for (var h of (hist || []).slice(-8)) c.push({ role: h.role === "user" ? "user" : "model", parts: [{ text: h.text }] });
     c.push({ role: "user", parts: [{ text: msg }] });
-    var r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GK, { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(8000), body: JSON.stringify({ system_instruction: { parts: [{ text: "You are a friendly website chat assistant for Cape Kayak Adventures, Cape Town's original kayak tour operator since 1994. Keep responses SHORT (1-2 sentences). Sound like a real person. 1 emoji max.\n\nSTRICT RULES:\n- ONLY answer from the knowledge base below\n- If the answer is not in the knowledge base, say: \"I'm not sure about that. Let me connect you to our team.\"\n- NEVER make up information, times, availability, or prices\n- NEVER say we don't offer something if it's in the knowledge base\n\nTOURS:\n- Sea Kayak Tour: R600/pp, 90 min, morning departures 07:00 and 09:00\n- Sunset Paddle: R600/pp, 2 hours, evening departure 17:00, includes sparkling wine\n- Private Tours: Tailored and personalized experiences available.\n- The early trip is cooler and a wonderful way to start the day. The Sunset Paddle is more relaxed with sparkling wine.\n- Wildlife sightings are not guaranteed, but there is an 80% chance of seeing dolphins. We also sometimes see seals, penguins, sunfish, and whales if very lucky.\n- We operate 365 days a year, weather permitting. Public holidays are some of our busiest days.\n\nMEETING POINT: Cape Kayak Adventures, 180 Beach Rd, Three Anchor Bay, Cape Town, 8005. Arrive 15 minutes early. If lost, call our number and a human will answer.\nWHAT TO BRING: Sunscreen, hat, sunnies, towel, water. Eat a light meal 1 hour before.\nWHAT TO WEAR: Comfortable clothes you don't mind getting wet, like shorts and a t-shirt. You will go barefoot.\nDURATION: Sea Kayak 90 min, Sunset Paddle 2 hours.\nAGES: 6+ welcome. Kids must be accompanied by an adult.\nPARKING & FACILITIES: Free street parking nearby. We have lockers for valuables and changing rooms close by. \n\nSAFETY: Experienced guides, life jackets provided and mandatory, stable sit-inside double kayaks. No experience needed. Beginners very welcome. 30+ years operating safely. Will I get wet? Yes, but the likelihood of capsizing is very low.\n\nCAMERA/PHONE: If you have a phone pouch then yes! We also take photos during the trip and send them to you afterwards.\nDOGS: If the doggie is used to water, we do make exceptions. Otherwise dogs aren't always allowed. Send us a message.\nWEIGHT/FITNESS: Weight restriction of 95kg per person. No special fitness needed.\nPREGNANT: Up to you, but as they are sit-inside kayaks, we can't be certain you'll fit comfortably if heavily pregnant. Chat to your doctor.\nGLASSES: Definitely, we recommend bringing sunnies \u2014 the glare can be strong.\nFOOD/DRINKS: We don't provide food. Water bottles for sale at R25 each.\n\nCANCELLATION: More than 24hrs = 95% refund. Less than 24hrs = no refund. Weather cancellation by us = full refund or free reschedule.\nPAYMENT: VISA and Mastercard accepted. For cash, we ask at least 50% deposit online.\nINTERNATIONAL CARDS: VISA and Mastercard are supported.\nGROUP DISCOUNT: 6+ people get 5% off.\nSPLIT PAYMENT: Yes we can split payment into multiple links.\n\nSUPPORT HOURS: Live chat via this bot 24/7. Human responses 9AM-5PM.\n\nWEATHER: We check conditions every morning. If swell above 2.6m, heavy fog, or wind above 25km/h SE or 20km/h other directions, we may postpone. We notify 1 hour before launch. Keep your phone nearby." }] }, contents: c, generationConfig: { temperature: 0.7, maxOutputTokens: 150 } }) });
+    var tsText = (toursList || []).map(function (t) { return "- " + t.name + ": R" + t.base_price_per_person + "/pp"; }).join("\n");
+    var sysText = "You are a friendly website chat assistant for Cape Kayak Adventures, Cape Town's original kayak tour operator since 1994. Keep responses SHORT (1-2 sentences). Sound like a real person. 1 emoji max.\n\nSTRICT RULES:\n- ONLY answer from the knowledge base below\n- If the answer is not in the knowledge base, say: \"I'm not sure about that. Let me connect you to our team.\"\n- NEVER make up information, times, availability, or prices\n- NEVER say we don't offer something if it's in the knowledge base\n\nCURRENT AVAILABLE TOURS:\n" + tsText + "\n\n- The early trip is cooler and a wonderful way to start the day. The Sunset Paddle is more relaxed with sparkling wine.\n- Wildlife sightings are not guaranteed, but there is an 80% chance of seeing dolphins. We also sometimes see seals, penguins, sunfish, and whales if very lucky.\n- We operate 365 days a year, weather permitting. Public holidays are some of our busiest days.\n\nMEETING POINT: Cape Kayak Adventures, 180 Beach Rd, Three Anchor Bay, Cape Town, 8005. Arrive 15 minutes early. If lost, call our number and a human will answer.\nWHAT TO BRING: Sunscreen, hat, sunnies, towel, water. Eat a light meal 1 hour before.\nWHAT TO WEAR: Comfortable clothes you don't mind getting wet, like shorts and a t-shirt. You will go barefoot.\nDURATION: Sea Kayak 90 min, Sunset Paddle 2 hours. Private tours vary.\nAGES: 6+ welcome. Kids must be accompanied by an adult.\nPARKING & FACILITIES: Free street parking nearby. We have lockers for valuables and changing rooms close by. \n\nSAFETY: Experienced guides, life jackets provided and mandatory, stable sit-inside double kayaks. No experience needed. Beginners very welcome. 30+ years operating safely. Will I get wet? Yes, but the likelihood of capsizing is very low.\n\nCAMERA/PHONE: If you have a phone pouch then yes! We also take photos during the trip and send them to you afterwards.\nDOGS: If the doggie is used to water, we do make exceptions. Otherwise dogs aren't always allowed. Send us a message.\nWEIGHT/FITNESS: Weight restriction of 95kg per person. No special fitness needed.\nPREGNANT: Up to you, but as they are sit-inside kayaks, we can't be certain you'll fit comfortably if heavily pregnant. Chat to your doctor.\nGLASSES: Definitely, we recommend bringing sunnies \u2014 the glare can be strong.\nFOOD/DRINKS: We don't provide food. Water bottles for sale at R25 each.\n\nCANCELLATION: More than 24hrs = 95% refund. Less than 24hrs = no refund. Weather cancellation by us = full refund or free reschedule.\nPAYMENT: VISA and Mastercard accepted. For cash, we ask at least 50% deposit online.\nINTERNATIONAL CARDS: VISA and Mastercard are supported.\nGROUP DISCOUNT: 6+ people get 5% off.\nSPLIT PAYMENT: Yes we can split payment into multiple links.\n\nSUPPORT HOURS: Live chat via this bot 24/7. Human responses 9AM-5PM.\n\nWEATHER: We check conditions every morning. If swell above 2.6m, heavy fog, or wind above 25km/h SE or 20km/h other directions, we may postpone. We notify 1 hour before launch. Keep your phone nearby.";
+    var r = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + GK, { method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(8000), body: JSON.stringify({ system_instruction: { parts: [{ text: sysText }] }, contents: c, generationConfig: { temperature: 0.7, maxOutputTokens: 150 } }) });
     var d = await r.json();
     if (d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts[0]) return d.candidates[0].content.parts[0].text;
     return null;
@@ -75,10 +77,15 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ reply: reply, state: ns }), { status: 200, headers: gCors(req) });
       }
       if (wBook || wAvail) {
-        var mt = null; for (var t of tours) {
-          if (lo.includes("private") && t.name.toLowerCase().includes("private")) { mt = t; break; }
-          if ((lo.includes("sea") || lo.includes("morning") || (lo.includes("paddle") && !lo.includes("sunset")) || lo.includes("normal") || lo.includes("regular") || (lo.includes("kayak") && !lo.includes("sunset"))) && t.name.includes("Sea") && !t.name.toLowerCase().includes("private")) mt = t;
-          if ((lo.includes("sunset") || lo.includes("evening") || lo.includes("wine")) && t.name.includes("Sunset") && !t.name.toLowerCase().includes("private")) mt = t;
+        var mt = null;
+        for (var t of tours) {
+          var tn = t.name.toLowerCase();
+          if (tn.includes("private") && lo.includes("private")) { mt = t; break; }
+          if (tn.includes("sunset") && lo.includes("sunset")) { mt = t; break; }
+          if (tn.includes("sea") && tn.includes("kayak") && (lo.includes("sea") || lo.includes("morning") || lo.includes("early") || (lo.includes("paddle") && !lo.includes("sunset")))) { mt = t; break; }
+          var words = tn.split(/\s+/).filter(function (w) { return w.length > 3 && w !== "tour" && w !== "paddle" && w !== "kayak"; });
+          for (var w of words) { if (lo.includes(w)) { mt = t; break; } }
+          if (mt) break;
         }
         if (mt) {
           ns = { step: "PICK_DATE", tid: mt.id, tname: mt.name, tprice: mt.base_price_per_person, bid: mt.business_id };
@@ -94,7 +101,7 @@ Deno.serve(async (req) => {
           buttons = tours.map(function (t4) { return { label: t4.name + " — R" + t4.base_price_per_person, value: t4.id }; });
         }
       }
-      else { var gem = await gemChat(hist, msg); reply = gem || "Hey! Want to book a paddle or got a question?"; }
+      else { var gem = await gemChat(hist, msg, tours); reply = gem || "Hey! Want to book a paddle or got a question?"; }
       return new Response(JSON.stringify({ reply: reply, state: ns, buttons: buttons, calendar: calendar }), { status: 200, headers: gCors(req) });
     }
     // ===== PICK_TOUR =====
@@ -103,10 +110,13 @@ Deno.serve(async (req) => {
       if (isBtnClick) picked = tours.find(function (t) { return t.id === btnVal; });
       else {
         for (var t5 of tours) {
-          if (lo.includes("private") && t5.name.toLowerCase().includes("private")) { picked = t5; break; }
-          if ((lo.includes("sea") || lo.includes("morning") || (lo.includes("paddle") && !lo.includes("sunset")) || lo.includes("kayak") && !lo.includes("sunset")) && t5.name.includes("Sea") && !t5.name.toLowerCase().includes("private")) picked = t5;
-          if ((lo.includes("sunset") || lo.includes("evening") || lo.includes("wine")) && t5.name.includes("Sunset") && !t5.name.toLowerCase().includes("private")) picked = t5;
-          if (lo.includes(t5.name.toLowerCase())) picked = t5;
+          var tn5 = t5.name.toLowerCase();
+          if (tn5.includes("private") && lo.includes("private")) { picked = t5; break; }
+          if (tn5.includes("sunset") && lo.includes("sunset")) { picked = t5; break; }
+          if (tn5.includes("sea") && tn5.includes("kayak") && (lo.includes("sea") || lo.includes("morning") || lo.includes("early") || (lo.includes("paddle") && !lo.includes("sunset")))) { picked = t5; break; }
+          var words = tn5.split(/\s+/).filter(function (w) { return w.length > 3 && w !== "tour" && w !== "paddle" && w !== "kayak"; });
+          for (var w of words) { if (lo.includes(w)) { picked = t5; break; } }
+          if (picked) break;
         }
       }
       if (picked) {
@@ -465,7 +475,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ reply: reply, state: ns, buttons: buttons, paymentUrl: pay }), { status: 200, headers: gCors(req) });
     }
     // ===== FALLBACK =====
-    var gem2 = await gemChat(hist, msg);
+    var gem2 = await gemChat(hist, msg, tours);
     reply = gem2 || "Hey! Need help booking or got a question?";
     ns = { step: "IDLE" };
     return new Response(JSON.stringify({ reply: reply, state: ns }), { status: 200, headers: gCors(req) });
