@@ -52,6 +52,7 @@ export default function SettingsPage() {
         color_cta: "#0c8a59",
         color_bg: "#f5f5f5",
         color_nav: "#ffffff",
+        color_hover: "#48cfad",
         chatbot_avatar: "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie",
         hero_eyebrow: "",
         hero_title: "",
@@ -370,6 +371,7 @@ export default function SettingsPage() {
                 color_cta: data.color_cta || "#0c8a59",
                 color_bg: data.color_bg || "#f5f5f5",
                 color_nav: data.color_nav || "#ffffff",
+                color_hover: data.color_hover || "#48cfad",
                 chatbot_avatar: data.chatbot_avatar || "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie",
                 hero_eyebrow: data.hero_eyebrow || "",
                 hero_title: data.hero_title || "",
@@ -404,6 +406,7 @@ export default function SettingsPage() {
             color_cta: siteSettings.color_cta,
             color_bg: siteSettings.color_bg,
             color_nav: siteSettings.color_nav,
+            color_hover: siteSettings.color_hover,
             chatbot_avatar: siteSettings.chatbot_avatar,
             hero_eyebrow: siteSettings.hero_eyebrow || null,
             hero_title: siteSettings.hero_title || null,
@@ -791,7 +794,33 @@ export default function SettingsPage() {
 
                     {/* Branding Colors */}
                     <div>
-                        <h3 className="text-sm font-semibold text-[var(--ck-text-strong)] mb-4 pb-2 border-b border-[var(--ck-border-subtle)]">Theme Colors</h3>
+                        <div className="flex items-center justify-between mb-4 pb-2 border-b border-[var(--ck-border-subtle)]">
+                            <h3 className="text-sm font-semibold text-[var(--ck-text-strong)]">Theme Colors</h3>
+                            <select
+                                className="ui-control px-3 py-1 text-xs rounded-lg outline-none cursor-pointer bg-[var(--ck-surface)] border border-[var(--ck-border-subtle)]"
+                                onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (!val) return;
+                                    const palettes: Record<string, any> = {
+                                        "Gentle Sea Breeze": { color_main: "#1F7A8C", color_secondary: "#022B3A", color_cta: "#1F7A8C", color_bg: "#E1E5F2", color_nav: "#FFFFFF", color_hover: "#BFDBF7" },
+                                        "Earthy Green": { color_main: "#52796F", color_secondary: "#2F3E46", color_cta: "#52796F", color_bg: "#CAD2C5", color_nav: "#F2F4F0", color_hover: "#84A98C" },
+                                        "Cherry Blossom": { color_main: "#BD632F", color_secondary: "#273E47", color_cta: "#A4243B", color_bg: "#D8C99B", color_nav: "#F8F5EE", color_hover: "#D8973C" },
+                                        "Soft Sand": { color_main: "#D5BDAF", color_secondary: "#4A4036", color_cta: "#D5BDAF", color_bg: "#F5EBE0", color_nav: "#FFFFFF", color_hover: "#D6CCC2" },
+                                        "Golden Summer Fields": { color_main: "#D4A373", color_secondary: "#3D4A27", color_cta: "#D4A373", color_bg: "#FEFAE0", color_nav: "#FFFFFF", color_hover: "#E9EDC9" }
+                                    };
+                                    if (palettes[val]) setSiteSettings(prev => ({ ...prev, ...palettes[val] }));
+                                    // Reset select back to default label after applying
+                                    e.target.value = "";
+                                }}
+                            >
+                                <option value="">Select a Palette...</option>
+                                <option value="Gentle Sea Breeze">Gentle Sea Breeze</option>
+                                <option value="Earthy Green">Earthy Green</option>
+                                <option value="Cherry Blossom">Cherry Blossom</option>
+                                <option value="Soft Sand">Soft Sand</option>
+                                <option value="Golden Summer Fields">Golden Summer Fields</option>
+                            </select>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
                                 <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Main Color</label>
@@ -835,6 +864,15 @@ export default function SettingsPage() {
                                     <input type="color" value={siteSettings.color_nav} onChange={e => setSiteSettings({ ...siteSettings, color_nav: e.target.value })}
                                         className="h-10 w-12 p-1 bg-transparent cursor-pointer border-r border-[var(--ck-border-subtle)]" />
                                     <input type="text" value={siteSettings.color_nav} onChange={e => setSiteSettings({ ...siteSettings, color_nav: e.target.value })}
+                                        className="flex-1 w-full px-3 py-2 text-sm outline-none uppercase" />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Card Hover Overlay</label>
+                                <div className="flex bg-[var(--ck-surface)] rounded-lg border border-[var(--ck-border-subtle)] overflow-hidden focus-within:ring-2 focus-within:ring-[var(--ck-accent)]">
+                                    <input type="color" value={siteSettings.color_hover} onChange={e => setSiteSettings({ ...siteSettings, color_hover: e.target.value })}
+                                        className="h-10 w-12 p-1 bg-transparent cursor-pointer border-r border-[var(--ck-border-subtle)]" />
+                                    <input type="text" value={siteSettings.color_hover} onChange={e => setSiteSettings({ ...siteSettings, color_hover: e.target.value })}
                                         className="flex-1 w-full px-3 py-2 text-sm outline-none uppercase" />
                                 </div>
                             </div>
