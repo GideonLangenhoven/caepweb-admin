@@ -806,7 +806,9 @@ export default function SettingsPage() {
                                         "Earthy Green": { color_main: "#52796F", color_secondary: "#2F3E46", color_cta: "#52796F", color_bg: "#CAD2C5", color_nav: "#F2F4F0", color_hover: "#84A98C" },
                                         "Cherry Blossom": { color_main: "#BD632F", color_secondary: "#273E47", color_cta: "#A4243B", color_bg: "#D8C99B", color_nav: "#F8F5EE", color_hover: "#D8973C" },
                                         "Soft Sand": { color_main: "#D5BDAF", color_secondary: "#4A4036", color_cta: "#D5BDAF", color_bg: "#F5EBE0", color_nav: "#FFFFFF", color_hover: "#D6CCC2" },
-                                        "Golden Summer Fields": { color_main: "#D4A373", color_secondary: "#3D4A27", color_cta: "#D4A373", color_bg: "#FEFAE0", color_nav: "#FFFFFF", color_hover: "#E9EDC9" }
+                                        "Golden Summer Fields": { color_main: "#D4A373", color_secondary: "#3D4A27", color_cta: "#D4A373", color_bg: "#FEFAE0", color_nav: "#FFFFFF", color_hover: "#E9EDC9" },
+                                        "Pastel Dreams": { color_main: "#FF99C8", color_secondary: "#2D3748", color_cta: "#FF99C8", color_bg: "#FCF6BD", color_nav: "#FFFFFF", color_hover: "#D0F4DE" },
+                                        "Purple Haze": { color_main: "#A167A5", color_secondary: "#0E273C", color_cta: "#A167A5", color_bg: "#E8D7F1", color_nav: "#F8F4FA", color_hover: "#D3BCCC" }
                                     };
                                     if (palettes[val]) setSiteSettings(prev => ({ ...prev, ...palettes[val] }));
                                     // Reset select back to default label after applying
@@ -819,6 +821,8 @@ export default function SettingsPage() {
                                 <option value="Cherry Blossom">Cherry Blossom</option>
                                 <option value="Soft Sand">Soft Sand</option>
                                 <option value="Golden Summer Fields">Golden Summer Fields</option>
+                                <option value="Pastel Dreams">Pastel Dreams</option>
+                                <option value="Purple Haze">Purple Haze</option>
                             </select>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
