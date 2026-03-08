@@ -796,34 +796,36 @@ export default function SettingsPage() {
                     <div>
                         <div className="flex items-center justify-between mb-4 pb-2 border-b border-[var(--ck-border-subtle)]">
                             <h3 className="text-sm font-semibold text-[var(--ck-text-strong)]">Theme Colors</h3>
-                            <select
-                                className="ui-control px-3 py-1 text-xs rounded-lg outline-none cursor-pointer bg-[var(--ck-surface)] border border-[var(--ck-border-subtle)]"
-                                onChange={(e) => {
-                                    const val = e.target.value;
-                                    if (!val) return;
-                                    const palettes: Record<string, any> = {
-                                        "Gentle Sea Breeze": { color_main: "#1F7A8C", color_secondary: "#022B3A", color_cta: "#1F7A8C", color_bg: "#E1E5F2", color_nav: "#FFFFFF", color_hover: "#BFDBF7" },
-                                        "Earthy Green": { color_main: "#52796F", color_secondary: "#2F3E46", color_cta: "#52796F", color_bg: "#CAD2C5", color_nav: "#F2F4F0", color_hover: "#84A98C" },
-                                        "Cherry Blossom": { color_main: "#BD632F", color_secondary: "#273E47", color_cta: "#A4243B", color_bg: "#D8C99B", color_nav: "#F8F5EE", color_hover: "#D8973C" },
-                                        "Soft Sand": { color_main: "#D5BDAF", color_secondary: "#4A4036", color_cta: "#D5BDAF", color_bg: "#F5EBE0", color_nav: "#FFFFFF", color_hover: "#D6CCC2" },
-                                        "Golden Summer Fields": { color_main: "#D4A373", color_secondary: "#3D4A27", color_cta: "#D4A373", color_bg: "#FEFAE0", color_nav: "#FFFFFF", color_hover: "#E9EDC9" },
-                                        "Pastel Dreams": { color_main: "#FF99C8", color_secondary: "#2D3748", color_cta: "#FF99C8", color_bg: "#FCF6BD", color_nav: "#FFFFFF", color_hover: "#D0F4DE" },
-                                        "Purple Haze": { color_main: "#A167A5", color_secondary: "#0E273C", color_cta: "#A167A5", color_bg: "#E8D7F1", color_nav: "#F8F4FA", color_hover: "#D3BCCC" }
-                                    };
-                                    if (palettes[val]) setSiteSettings(prev => ({ ...prev, ...palettes[val] }));
-                                    // Reset select back to default label after applying
-                                    e.target.value = "";
-                                }}
-                            >
-                                <option value="">Select a Palette...</option>
-                                <option value="Gentle Sea Breeze">Gentle Sea Breeze</option>
-                                <option value="Earthy Green">Earthy Green</option>
-                                <option value="Cherry Blossom">Cherry Blossom</option>
-                                <option value="Soft Sand">Soft Sand</option>
-                                <option value="Golden Summer Fields">Golden Summer Fields</option>
-                                <option value="Pastel Dreams">Pastel Dreams</option>
-                                <option value="Purple Haze">Purple Haze</option>
-                            </select>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-medium text-[var(--ck-text-muted)]">Choose Template -</span>
+                                <select
+                                    className="ui-control px-3 py-1 text-xs rounded-lg outline-none cursor-pointer bg-[var(--ck-surface)] border border-[var(--ck-border-subtle)]"
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        if (!val) return;
+                                        const palettes: Record<string, any> = {
+                                            "Gentle Sea Breeze": { color_main: "#1F7A8C", color_secondary: "#022B3A", color_cta: "#1F7A8C", color_bg: "#E1E5F2", color_nav: "#FFFFFF", color_hover: "#BFDBF7" },
+                                            "Earthy Green": { color_main: "#52796F", color_secondary: "#2F3E46", color_cta: "#52796F", color_bg: "#CAD2C5", color_nav: "#F2F4F0", color_hover: "#84A98C" },
+                                            "Cherry Blossom": { color_main: "#BD632F", color_secondary: "#273E47", color_cta: "#A4243B", color_bg: "#D8C99B", color_nav: "#F8F5EE", color_hover: "#D8973C" },
+                                            "Soft Sand": { color_main: "#D5BDAF", color_secondary: "#4A4036", color_cta: "#D5BDAF", color_bg: "#F5EBE0", color_nav: "#FFFFFF", color_hover: "#D6CCC2" },
+                                            "Golden Summer Fields": { color_main: "#D4A373", color_secondary: "#3D4A27", color_cta: "#D4A373", color_bg: "#FEFAE0", color_nav: "#FFFFFF", color_hover: "#E9EDC9" },
+                                            "Pastel Dreams": { color_main: "#FF99C8", color_secondary: "#2D3748", color_cta: "#FF99C8", color_bg: "#FCF6BD", color_nav: "#FFFFFF", color_hover: "#D0F4DE" },
+                                            "Purple Haze": { color_main: "#A167A5", color_secondary: "#0E273C", color_cta: "#A167A5", color_bg: "#E8D7F1", color_nav: "#F8F4FA", color_hover: "#D3BCCC" }
+                                        };
+                                        if (palettes[val]) setSiteSettings(prev => ({ ...prev, ...palettes[val] }));
+                                        e.target.value = "";
+                                    }}
+                                >
+                                    <option value="">Select a Palette...</option>
+                                    <option value="Gentle Sea Breeze">Gentle Sea Breeze</option>
+                                    <option value="Earthy Green">Earthy Green</option>
+                                    <option value="Cherry Blossom">Cherry Blossom</option>
+                                    <option value="Soft Sand">Soft Sand</option>
+                                    <option value="Golden Summer Fields">Golden Summer Fields</option>
+                                    <option value="Pastel Dreams">Pastel Dreams</option>
+                                    <option value="Purple Haze">Purple Haze</option>
+                                </select>
+                            </div>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <div>
@@ -924,7 +926,7 @@ export default function SettingsPage() {
                     </div>
 
                 </form>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
