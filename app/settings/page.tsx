@@ -7,7 +7,7 @@ import RichTextEditor from "../../components/RichTextEditor";
 import ExternalBookingSettings from "../../components/ExternalBookingSettings";
 import { fetchUsageSnapshot, type UsageSnapshot } from "../lib/billing";
 
-var BOOKING_URL = "https://capekayak-booking-sk1r.vercel.app";
+var BOOKING_URL = "https://booking-mu-steel.vercel.app";
 
 interface Tour {
     id: string;
@@ -133,6 +133,12 @@ export default function SettingsPage() {
             setAdding(false);
             if (insertErr.code === "23505") setError("Email already exists");
             else setError("Failed to add admin: " + insertErr.message);
+            return;
+        }
+
+        if (!insertedAdmin) {
+            setAdding(false);
+            setError("Admin created, but failed to retrieve details for setup link.");
             return;
         }
 
