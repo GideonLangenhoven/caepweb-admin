@@ -132,8 +132,8 @@ export default function Vouchers() {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Vouchers</h2>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
-        <label className="text-sm text-gray-600 flex items-center gap-2">
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <label className="flex flex-col gap-2 text-sm text-gray-600 sm:flex-row sm:items-center">
           Filter by created date
           <DatePicker value={selectedDate} onChange={setSelectedDate} />
         </label>
@@ -150,7 +150,7 @@ export default function Vouchers() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search vouchers..."
-          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+          className="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm sm:py-1.5"
         />
       </div>
 
@@ -166,7 +166,34 @@ export default function Vouchers() {
                 <h3 className="text-xl font-semibold text-gray-800">{g.dayLabel}</h3>
                 <span className="text-xs text-gray-500">{g.items.length} vouchers</span>
               </div>
-              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+              <div className="space-y-3 md:hidden">
+                {g.items.map((v) => (
+                  <div key={v.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-sm font-bold text-blue-600">{v.code || "-"}</p>
+                        <p className="mt-1 text-sm font-semibold text-gray-800">{v.recipient_name || "-"}</p>
+                        <p className="text-xs text-gray-500">{v.tour_name || "-"}</p>
+                      </div>
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[v.status || ""] || "bg-gray-100 text-gray-700"}`}>
+                        {v.status || "-"}
+                      </span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                      <div className="rounded-lg bg-gray-50 p-2">
+                        <p className="text-[11px] text-gray-500">Value</p>
+                        <p className="font-semibold">{v.value !== null && v.value !== undefined ? "R" + Number(v.value).toFixed(2) : "-"}</p>
+                      </div>
+                      <div className="rounded-lg bg-gray-50 p-2">
+                        <p className="text-[11px] text-gray-500">Buyer</p>
+                        <p className="text-xs font-semibold">{v.buyer_name || "-"}</p>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400">Expires {v.expires_at ? new Date(v.expires_at).toLocaleDateString("en-ZA") : "-"}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>

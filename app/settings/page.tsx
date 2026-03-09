@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
+import { generateSecureToken, sendAdminSetupLink, sha256 } from "../lib/admin-auth";
 import { useBusinessContext } from "../../components/BusinessContext";
 import RichTextEditor from "../../components/RichTextEditor";
 import ExternalBookingSettings from "../../components/ExternalBookingSettings";
@@ -27,10 +28,12 @@ export default function SettingsPage() {
     var [role, setRole] = useState<string | null>(null);
 
     // New Admin Form
+    var [newName, setNewName] = useState("");
     var [newEmail, setNewEmail] = useState("");
-    var [newPass, setNewPass] = useState("");
     var [adding, setAdding] = useState(false);
     var [error, setError] = useState("");
+    var [adminMessage, setAdminMessage] = useState("");
+    var [resendingAdminId, setResendingAdminId] = useState("");
 
     // Tours state
     var [tours, setTours] = useState<Tour[]>([]);
@@ -89,7 +92,7 @@ export default function SettingsPage() {
 
     async function fetchAdmins() {
         setLoading(true);
-        var { data, error } = await supabase.from("admin_users").select("id, email, role, created_at").eq("business_id", businessId).order("created_at");
+        var { data, error } = await supabase.from("admin_users").select("id, name, email, role, created_at, password_set_at, must_set_password, invite_sent_at").eq("business_id", businessId).order("created_at");
         if (data) setAdmins(data);
         setLoading(false);
     }
@@ -104,29 +107,27 @@ export default function SettingsPage() {
         }
     }
 
-    async function sha256(str: string) {
-        var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-        return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-    }
-
     async function handleAddAdmin(e: React.FormEvent) {
         e.preventDefault();
-        if (!newEmail || !newPass) return setError("Email and Password required");
+        if (!newName.trim() || !newEmail.trim()) return setError("Name and email are required.");
         var seatLimit = usageSnapshot?.seat_limit || 10;
         if (admins.length >= seatLimit) return setError("Admin seat limit reached for your current plan (" + seatLimit + "). Upgrade to add more admins.");
 
         setAdding(true);
         setError("");
+        setAdminMessage("");
 
-        var hash = await sha256(newPass);
-
+        var hash = await sha256(generateSecureToken(24));
         var adminEmail = newEmail.trim().toLowerCase();
-        var { error: insertErr } = await supabase.from("admin_users").insert({
+        var { data: insertedAdmin, error: insertErr } = await supabase.from("admin_users").insert({
+            name: newName.trim(),
             email: adminEmail,
             password_hash: hash,
             role: "ADMIN",
-            business_id: businessId
-        });
+            business_id: businessId,
+            must_set_password: true,
+            password_set_at: null,
+        }).select("id, email, name").single();
 
         if (insertErr) {
             setAdding(false);
@@ -135,28 +136,47 @@ export default function SettingsPage() {
             return;
         }
 
-        // Send welcome email with temp password and change-password link
         try {
-            var baseUrl = window.location.origin;
-            await supabase.functions.invoke("send-email", {
-                body: {
-                    type: "ADMIN_WELCOME",
-                    data: {
-                        email: adminEmail,
-                        temp_password: newPass,
-                        change_password_url: baseUrl + "/change-password",
-                    },
-                },
-            });
+            await sendAdminSetupLink(insertedAdmin, "ADMIN_INVITE");
+            setAdminMessage("Admin added. A secure password setup email has been sent.");
         } catch (emailErr) {
             console.error("Welcome email failed:", emailErr);
+            setError("Admin added, but the password setup email failed to send.");
         }
 
         setAdding(false);
+        setNewName("");
         setNewEmail("");
-        setNewPass("");
         fetchAdmins();
         fetchPlanUsage();
+    }
+
+    async function handleResendSetup(admin: { id: string; email: string; name?: string | null }) {
+        setResendingAdminId(admin.id);
+        setError("");
+        setAdminMessage("");
+        try {
+            await sendAdminSetupLink(admin, "RESET");
+            setAdminMessage("A fresh password setup email has been sent to " + admin.email + ".");
+            fetchAdmins();
+        } catch (resendError) {
+            console.error("Failed to resend password setup link:", resendError);
+            setError("Failed to send a password setup email to " + admin.email + ".");
+        }
+        setResendingAdminId("");
+    }
+
+    function adminPasswordStatus(admin: any) {
+        if (admin.must_set_password || !admin.password_set_at) {
+            var sentLabel = admin.invite_sent_at ? "Setup email sent " + new Date(admin.invite_sent_at).toLocaleDateString() : "Setup email not sent yet";
+            return { label: "Password setup pending", detail: sentLabel, tone: "text-amber-700" };
+        }
+
+        return {
+            label: "Password created",
+            detail: "Created " + new Date(admin.password_set_at).toLocaleDateString(),
+            tone: "text-emerald-700",
+        };
     }
 
     async function fetchTours() {
@@ -456,21 +476,39 @@ export default function SettingsPage() {
 
                     <div className="ui-surface rounded-2xl border border-[var(--ck-border-subtle)] overflow-hidden">
                         <div className="divide-y divide-[var(--ck-border-subtle)]">
-                            {admins.map(a => (
-                                <div key={a.id} className="p-4 flex items-center justify-between">
-                                    <div>
-                                        <div className="font-medium text-[var(--ck-text-strong)] text-sm">{a.email}</div>
-                                        <div className="text-xs text-[var(--ck-text-muted)] mt-0.5">
-                                            {a.role === "MAIN_ADMIN" ? "Main Admin" : "Admin"} • Added {new Date(a.created_at).toLocaleDateString()}
+                            {admins.map(a => {
+                                var status = adminPasswordStatus(a);
+                                return (
+                                    <div key={a.id} className="p-4 flex items-center justify-between">
+                                        <div>
+                                            <div className="font-medium text-[var(--ck-text-strong)] text-sm">{a.name || a.email}</div>
+                                            <div className="text-xs text-[var(--ck-text-muted)] mt-0.5">{a.email}</div>
+                                            <div className="text-xs text-[var(--ck-text-muted)] mt-0.5">
+                                                {a.role === "MAIN_ADMIN" ? "Main Admin" : "Admin"} • Added {new Date(a.created_at).toLocaleDateString()}
+                                            </div>
+                                            <div className={"text-xs mt-0.5 " + status.tone}>
+                                                {status.label} • {status.detail}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            {a.role !== "MAIN_ADMIN" && (
+                                                <button
+                                                    onClick={() => handleResendSetup(a)}
+                                                    disabled={resendingAdminId === a.id}
+                                                    className="text-[var(--ck-accent)] text-sm font-medium hover:underline disabled:opacity-50"
+                                                >
+                                                    {resendingAdminId === a.id ? "Sending..." : ((a.must_set_password || !a.password_set_at) ? "Resend setup link" : "Email reset link")}
+                                                </button>
+                                            )}
+                                            {a.role !== "MAIN_ADMIN" && (
+                                                <button onClick={() => handleDelete(a.id, a.role)} className="text-[var(--ck-danger)] text-sm font-medium hover:underline">
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    {a.role !== "MAIN_ADMIN" && (
-                                        <button onClick={() => handleDelete(a.id, a.role)} className="text-[var(--ck-danger)] text-sm font-medium hover:underline">
-                                            Remove
-                                        </button>
-                                    )}
-                                </div>
-                            ))}
+                                );
+                            })}
                             {admins.length === 0 && <div className="p-4 text-center text-sm ui-text-muted">No admins found</div>}
                         </div>
                     </div>
@@ -487,18 +525,24 @@ export default function SettingsPage() {
                         ) : (
                             <>
                                 <div>
+                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Admin Name</label>
+                                    <input type="text" required value={newName} onChange={e => setNewName(e.target.value)}
+                                        className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="e.g. Sarah Jacobs" />
+                                </div>
+                                <div>
                                     <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Email Address</label>
                                     <input type="email" required value={newEmail} onChange={e => setNewEmail(e.target.value)}
                                         className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="admin@example.com" />
                                 </div>
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--ck-text-muted)] mb-1">Temporary Password</label>
-                                    <input type="text" required value={newPass} onChange={e => setNewPass(e.target.value)}
-                                        className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Enter a secure password" />
+                                    <div className="rounded-xl border border-[var(--ck-border-subtle)] bg-[var(--ck-bg)] p-3 text-xs text-[var(--ck-text-muted)]">
+                                        The new admin will receive a confirmation email with a secure link to create their password.
+                                    </div>
                                 </div>
                                 {error && <div className="text-xs text-[var(--ck-danger)] font-medium">{error}</div>}
+                                {adminMessage && <div className="text-xs text-[var(--ck-success)] font-medium">{adminMessage}</div>}
                                 <button type="submit" disabled={adding} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:opacity-90 disabled:opacity-50">
-                                    {adding ? "Adding..." : "Add Admin"}
+                                    {adding ? "Adding..." : "Add Admin and Send Setup Link"}
                                 </button>
                             </>
                         )}

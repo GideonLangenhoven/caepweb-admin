@@ -56,7 +56,7 @@ export default function WeekView({ slots, currentDate, onSlotClick, selectedCanc
 
     return (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
-            <div className="min-w-[800px] grid grid-cols-7 divide-x divide-gray-200 bg-white">
+            <div className="grid min-w-[720px] grid-cols-7 divide-x divide-gray-200 bg-white md:min-w-[800px]">
                 {days.map((day) => {
                     const dateStr = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
                     const isSelected = selectedCancelDates?.includes(dateStr);
@@ -67,14 +67,14 @@ export default function WeekView({ slots, currentDate, onSlotClick, selectedCanc
                     const isPast = day < todayObj;
 
                     return (
-                        <div key={dateStr} className="flex flex-col">
+                        <div key={dateStr} className="flex min-w-0 flex-col">
                             <div
                                 onClick={() => {
                                     if (!isPast) {
                                         onToggleCancelDate?.(dateStr);
                                     }
                                 }}
-                                className={`p-3 text-center border-b border-gray-200 transition-colors ${isPast ? "opacity-50 cursor-not-allowed bg-gray-100" :
+                                className={`border-b border-gray-200 p-2 text-center transition-colors md:p-3 ${isPast ? "opacity-50 cursor-not-allowed bg-gray-100" :
                                         isSelected ? "bg-red-100 border-red-200 hover:bg-red-200 cursor-pointer" :
                                             isToday ? "bg-blue-50 hover:bg-blue-100 cursor-pointer" :
                                                 "bg-gray-50 hover:bg-gray-100 cursor-pointer"
@@ -82,7 +82,7 @@ export default function WeekView({ slots, currentDate, onSlotClick, selectedCanc
                                 <div className={`text-xs font-medium uppercase ${isSelected && !isPast ? "text-red-700" : "text-gray-500"}`}>
                                     {day.toLocaleDateString("en-US", { weekday: "short" })}
                                 </div>
-                                <div className={`text-sm font-semibold mt-1 rounded-full w-8 h-8 flex items-center justify-center mx-auto ${isPast ? "text-gray-400" :
+                                <div className={`mx-auto mt-1 flex h-8 w-8 items-center justify-center rounded-full text-sm font-semibold ${isPast ? "text-gray-400" :
                                         isSelected ? "bg-red-600 text-white" :
                                             isToday ? "bg-blue-600 text-white" : "text-gray-900"
                                     }`}>
@@ -90,7 +90,7 @@ export default function WeekView({ slots, currentDate, onSlotClick, selectedCanc
                                 </div>
                             </div>
 
-                            <div className="flex-1 p-2 min-h-[300px] space-y-2 bg-white">
+                            <div className="min-h-[280px] flex-1 space-y-2 bg-white p-2">
                                 {getSlotsForDay(day).map((slot) => {
                                     const avail = slot.capacity_total - slot.booked - (slot.held || 0);
                                     const isClosed = slot.status !== "OPEN";
@@ -109,8 +109,8 @@ export default function WeekView({ slots, currentDate, onSlotClick, selectedCanc
                                                 <span className="font-bold text-gray-900">{fmtTime(slot.start_time)}</span>
                                                 {isClosed && <span className="text-[10px] bg-red-100 text-red-600 px-1 rounded">Closed</span>}
                                             </div>
-                                            <div className="font-medium truncate mb-1" title={slot.tours?.name}>{slot.tours?.name}</div>
-                                            <div className="flex justify-between text-gray-500">
+                                            <div className="mb-1 truncate font-medium" title={slot.tours?.name}>{slot.tours?.name}</div>
+                                            <div className="flex justify-between gap-2 text-gray-500">
                                                 <span>{slot.booked}/{slot.capacity_total}</span>
                                                 <span className={avail > 0 ? "text-green-600 font-bold" : "text-gray-400"}>
                                                     {avail} left

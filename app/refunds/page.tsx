@@ -119,14 +119,14 @@ export default function Refunds() {
 
   return (
     <div className="max-w-4xl space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-2xl font-bold">💰 Refund Queue</h2>
           <p className="text-sm text-gray-500 mt-1">{refunds.length} pending · R{totalRefund.toLocaleString()}</p>
         </div>
         {refunds.length > 1 && (
           <button onClick={refundAll}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700">
+            className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 sm:w-auto">
             ⚡ Refund All ({refunds.length})
           </button>
         )}
@@ -150,9 +150,9 @@ export default function Refunds() {
                     {b.cancellation_reason && <p className="text-xs text-gray-400 mt-1">Reason: {b.cancellation_reason}</p>}
                     {!hasCheckout && <p className="text-xs text-amber-600 mt-1">⚠ No Yoco checkout ID — manual refund only</p>}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className="flex items-center gap-1 justify-end">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <div className="sm:text-right">
+                      <div className="flex items-center gap-1 sm:justify-end">
                         <span className="text-lg font-bold text-red-600">R</span>
                         <input
                           type="number"
@@ -174,15 +174,15 @@ export default function Refunds() {
                       )}
                       <p className="text-xs text-gray-400">{b.refund_notes}</p>
                     </div>
-                    <div className="flex flex-col gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-col">
                       {hasCheckout && (
                         <button onClick={() => autoRefund(b.id)} disabled={isProcessing}
-                          className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 whitespace-nowrap">
+                          className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50 whitespace-nowrap">
                           {isProcessing ? "⏳ Processing..." : "⚡ Auto Refund"}
                         </button>
                       )}
                       <button onClick={() => manualRefund(b.id)}
-                        className="bg-gray-100 text-gray-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 whitespace-nowrap">
+                        className="rounded-lg bg-gray-100 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 whitespace-nowrap">
                         ✋ Manual
                       </button>
                     </div>
@@ -208,7 +208,7 @@ export default function Refunds() {
         {showProcessed && (
           <div className="space-y-2 mt-3">
             {processed.map((b: any) => (
-              <div key={b.id} className="bg-gray-50 rounded-xl border border-gray-100 p-3 flex items-center gap-3">
+              <div key={b.id} className="flex flex-col gap-2 rounded-xl border border-gray-100 bg-gray-50 p-3 sm:flex-row sm:items-center">
                 <div className="flex-1">
                   <p className="font-medium text-sm">{b.customer_name} <span className="text-gray-400 font-mono text-xs">({b.id.substring(0, 8).toUpperCase()})</span></p>
                   <p className="text-xs text-gray-400">{b.tours?.name} · {b.slots?.start_time ? fmtTime(b.slots.start_time) : "-"}</p>

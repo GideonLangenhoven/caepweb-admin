@@ -85,7 +85,7 @@ export default function PhotosPage() {
             "! 📸 Thank you for joining us on the " + tourName +
             "! Here are your trip photos:\n\n" +
             validUrls.join("\n") +
-            "\n\nWe hope you had an amazing time and would love to see you again! Book your next adventure at book.capekayak.co.za";
+            "\n\nWe hope you had an amazing time and would love to see you again! Book your next adventure at booking-mu-steel.vercel.app";
           try {
             await fetch(SU + "/functions/v1/send-whatsapp-text", {
               method: "POST",
@@ -174,12 +174,12 @@ export default function PhotosPage() {
             <p className="text-xs text-gray-400 mb-3">Upload photos to Google Drive, Dropbox, or any host and paste the share links here.</p>
             <div className="space-y-2">
               {urls.map((u, i) => (
-                <div key={i} className="flex gap-2">
+                <div key={i} className="flex items-start gap-2">
                   <input type="text" value={u} onChange={e => updateUrl(i, e.target.value)}
                     placeholder="https://drive.google.com/file/..."
                     className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
                   {urls.length > 1 && (
-                    <button onClick={() => removeUrl(i)} className="text-gray-400 hover:text-red-500 text-sm px-2">✕</button>
+                    <button onClick={() => removeUrl(i)} className="shrink-0 px-2 py-2 text-sm text-gray-400 hover:text-red-500">✕</button>
                   )}
                 </div>
               ))}
@@ -206,7 +206,7 @@ export default function PhotosPage() {
           <h2 className="font-semibold mb-3">Recently Sent</h2>
           <div className="space-y-2 max-h-48 overflow-auto">
             {sentHistory.map(p => (
-              <div key={p.id} className="flex items-center gap-3 text-sm border-b border-gray-50 py-2">
+              <div key={p.id} className="flex flex-col gap-1 border-b border-gray-50 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
                 <span className="text-gray-400">📸</span>
                 <span className="flex-1 truncate text-blue-600 text-xs">{p.photo_url}</span>
                 <span className="text-xs text-gray-400">{new Date(p.uploaded_at).toLocaleDateString("en-ZA", { day: "numeric", month: "short" })}</span>

@@ -43,7 +43,7 @@ export default function DayView({ slots, currentDate, onSlotClick, selectedCance
     const isPast = dayObj < todayObj;
 
     return (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
             <div
                 onClick={() => {
                     if (!isPast) {
@@ -65,51 +65,84 @@ export default function DayView({ slots, currentDate, onSlotClick, selectedCance
                     No slots scheduled for this day.
                 </div>
             ) : (
-                <table className="w-full text-sm">
-                    <thead className="bg-gray-50">
-                        <tr>
-                            <th className="text-left p-3 font-medium text-gray-600">Time</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Tour</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Capacity</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Booked</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Held</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Available</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Status</th>
-                            <th className="text-left p-3 font-medium text-gray-600">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+                <>
+                    <div className="space-y-3 p-4 md:hidden">
                         {daySlots.map((s) => {
                             const avail = s.capacity_total - s.booked - (s.held || 0);
                             return (
-                                <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50">
-                                    <td className="p-3 font-mono">{fmtTime(s.start_time)}</td>
-                                    <td className="p-3 font-medium">{s.tours?.name}</td>
-                                    <td className="p-3">{s.capacity_total}</td>
-                                    <td className="p-3">{s.booked}</td>
-                                    <td className="p-3">{s.held || 0}</td>
-                                    <td className={`p-3 font-bold ${avail > 0 ? "text-green-600" : "text-gray-400"}`}>{avail}</td>
-                                    <td className="p-3">
-                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.status === "OPEN" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                                <button
+                                    key={s.id}
+                                    onClick={() => onSlotClick(s)}
+                                    className="w-full rounded-xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-gray-300"
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="font-mono text-sm font-semibold text-gray-900">{fmtTime(s.start_time)}</p>
+                                            <p className="mt-1 truncate text-sm font-medium text-gray-800">{s.tours?.name}</p>
+                                        </div>
+                                        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${s.status === "OPEN" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
                                             {s.status}
                                         </span>
-                                    </td>
-                                    <td className="p-3">
-                                        <button
-                                            onClick={() => onSlotClick(s)}
-                                            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${s.status === "OPEN"
-                                                ? "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200"
-                                                : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
-                                                }`}
-                                        >
-                                            Edit Slot
-                                        </button>
-                                    </td>
-                                </tr>
+                                    </div>
+                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-gray-500">
+                                        <div>Capacity: <span className="font-semibold text-gray-800">{s.capacity_total}</span></div>
+                                        <div>Booked: <span className="font-semibold text-gray-800">{s.booked}</span></div>
+                                        <div>Held: <span className="font-semibold text-gray-800">{s.held || 0}</span></div>
+                                        <div>Available: <span className={`font-semibold ${avail > 0 ? "text-green-600" : "text-gray-400"}`}>{avail}</span></div>
+                                    </div>
+                                </button>
                             );
                         })}
-                    </tbody>
-                </table>
+                    </div>
+
+                    <div className="hidden overflow-x-auto md:block">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="text-left p-3 font-medium text-gray-600">Time</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Tour</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Capacity</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Booked</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Held</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Available</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Status</th>
+                                    <th className="text-left p-3 font-medium text-gray-600">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {daySlots.map((s) => {
+                                    const avail = s.capacity_total - s.booked - (s.held || 0);
+                                    return (
+                                        <tr key={s.id} className="border-t border-gray-100 hover:bg-gray-50">
+                                            <td className="p-3 font-mono">{fmtTime(s.start_time)}</td>
+                                            <td className="p-3 font-medium">{s.tours?.name}</td>
+                                            <td className="p-3">{s.capacity_total}</td>
+                                            <td className="p-3">{s.booked}</td>
+                                            <td className="p-3">{s.held || 0}</td>
+                                            <td className={`p-3 font-bold ${avail > 0 ? "text-green-600" : "text-gray-400"}`}>{avail}</td>
+                                            <td className="p-3">
+                                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${s.status === "OPEN" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                                                    {s.status}
+                                                </span>
+                                            </td>
+                                            <td className="p-3">
+                                                <button
+                                                    onClick={() => onSlotClick(s)}
+                                                    className={`px-3 py-1 rounded text-xs font-medium transition-colors ${s.status === "OPEN"
+                                                        ? "bg-gray-50 text-gray-600 hover:bg-gray-100 border border-gray-200"
+                                                        : "bg-red-50 text-red-600 hover:bg-red-100 border border-red-200"
+                                                        }`}
+                                                >
+                                                    Edit Slot
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </>
             )}
         </div>
     );

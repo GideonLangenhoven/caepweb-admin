@@ -94,20 +94,20 @@ export default function AppShell({ children, nav }: { children: React.ReactNode;
             <SignOutButton variant="header" />
           </div>
         </header>
-        <main className="flex-1 overflow-auto px-4 py-6 md:px-10 md:py-8">{children}</main>
+        <main className="flex-1 overflow-auto px-4 py-6 pb-8 md:px-10 md:py-8">{children}</main>
 
-        <nav className="md:hidden flex justify-around border-t py-2 backdrop-blur" style={{ background: "color-mix(in srgb, var(--ck-surface) 90%, transparent)", borderColor: "var(--ck-border-strong)" }}>
+        <nav className="md:hidden shrink-0 flex justify-around border-t py-2 backdrop-blur" style={{ background: "color-mix(in srgb, var(--ck-surface) 90%, transparent)", borderColor: "var(--ck-border-strong)" }}>
           {nav.slice(0, 5).map((n) => {
             const Icon = (LucideIcons as any)[n.icon] || LucideIcons.Circle;
             const isActive = n.href === "/" ? pathname === "/" : pathname === n.href || pathname.startsWith(n.href + "/");
             return (
-              <Link key={n.href} href={n.href} className="relative flex flex-col items-center rounded-lg px-2 py-1 text-xs font-medium" style={{ color: isActive ? "var(--ck-accent)" : "var(--ck-text-muted)" }}>
+              <Link key={n.href} href={n.href} className="relative flex min-w-0 flex-1 flex-col items-center rounded-lg px-1 py-1 text-[11px] font-medium" style={{ color: isActive ? "var(--ck-accent)" : "var(--ck-text-muted)" }}>
                 <div className="relative mb-1">
                   <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
                   {n.href === "/inbox" && <div className="absolute -top-1 -right-2 transform scale-75"><NotificationBadge /></div>}
                   {n.href === "/refunds" && <div className="absolute -top-1 -right-2 transform scale-75"><RefundBadge /></div>}
                 </div>
-                <span>{n.label}</span>
+                <span className="truncate">{n.label}</span>
               </Link>
             );
           })}

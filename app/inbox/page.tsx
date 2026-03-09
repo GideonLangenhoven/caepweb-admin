@@ -257,10 +257,11 @@ export default function Inbox() {
   return (
     <div className="h-full flex flex-col">
       {/* Tab header */}
-      <div className="flex items-center gap-1 mb-4">
+      <div className="-mx-4 mb-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="flex min-w-max items-center gap-3">
         <button
           onClick={() => setActiveTab("inbox")}
-          className={`text-2xl font-bold px-1 pb-0.5 border-b-2 transition-colors mr-1 ${activeTab === "inbox"
+          className={`px-1 pb-0.5 text-xl font-bold border-b-2 transition-colors sm:text-2xl ${activeTab === "inbox"
             ? "border-blue-600 text-gray-900"
             : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
@@ -274,19 +275,20 @@ export default function Inbox() {
         </button>
         <button
           onClick={() => setActiveTab("history")}
-          className={`text-2xl font-bold px-1 pb-0.5 border-b-2 transition-colors ${activeTab === "history"
+          className={`px-1 pb-0.5 text-xl font-bold border-b-2 transition-colors whitespace-nowrap sm:text-2xl ${activeTab === "history"
             ? "border-blue-600 text-gray-900"
             : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
         >
           Chat History
         </button>
+        </div>
       </div>
 
       {/* ── Inbox Tab ── */}
       {activeTab === "inbox" && (
         loading ? <p className="text-gray-500">Loading...</p> : (
-          <div className="flex-1 flex gap-4 min-h-0">
+          <div className="flex min-h-0 flex-1 gap-3 md:gap-4">
             {/* Conversation list — hidden on mobile when a chat is selected */}
             <div className={`w-full md:w-72 shrink-0 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden ${selected ? "hidden md:flex" : "flex"}`}>
               <div className="p-3 border-b border-gray-200 bg-gray-50">
@@ -309,7 +311,7 @@ export default function Inbox() {
             {/* Chat panel — full width on mobile */}
             {selected ? (
               <div className="flex-1 flex flex-col bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="p-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-gray-50 p-3">
                   <button onClick={() => setSelected(null)} className="md:hidden shrink-0 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs font-medium hover:bg-gray-50">
                     ← Back
                   </button>
@@ -318,7 +320,7 @@ export default function Inbox() {
                     <p className="text-xs text-gray-500 truncate">{selected.phone} · {selected.email || "no email"}</p>
                   </div>
                   <button onClick={() => returnToBot(selected.id, selected.phone)}
-                    className="shrink-0 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-blue-700">
+                    className="w-full rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 sm:w-auto">
                     Return to Bot
                   </button>
                 </div>
@@ -332,12 +334,12 @@ export default function Inbox() {
                 </div>
 
                 <div className="p-3 border-t border-gray-200 bg-white">
-                  <div className="flex gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row">
                     <textarea value={reply} onChange={(e) => setReply(e.target.value)} onKeyDown={handleKeyDown}
                       rows={2} placeholder="Type your reply... (Enter to send)"
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
                     <button onClick={sendReply} disabled={sending || !reply.trim()}
-                      className="bg-green-600 text-white px-4 rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50 self-end">
+                      className="self-stretch rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-50 sm:self-end">
                       {sending ? "..." : "Send"}
                     </button>
                   </div>

@@ -53,6 +53,17 @@ export default function Slots() {
   const [showCancelDay, setShowCancelDay] = useState(false);
   const [selectedCancelDates, setSelectedCancelDates] = useState<string[]>([]);
 
+  useEffect(() => {
+    function syncViewMode() {
+      if (window.innerWidth < 768) {
+        setViewMode("day");
+      }
+    }
+    syncViewMode();
+    window.addEventListener("resize", syncViewMode);
+    return () => window.removeEventListener("resize", syncViewMode);
+  }, []);
+
   const toggleCancelDate = (dateStr: string) => {
     setSelectedCancelDates(prev => prev.includes(dateStr) ? prev.filter(d => d !== dateStr) : [...prev, dateStr]);
   };
@@ -554,9 +565,9 @@ export default function Slots() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl sm:text-2xl font-bold">Slot Management</h2>
-        <div className="flex gap-2">
+        <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto">
           <button
             onClick={() => {
               if (selectedCancelDates.length === 0) {
@@ -674,15 +685,15 @@ export default function Slots() {
               </label>
             </div>
 
-            <div className="mt-6 flex items-center justify-between">
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
                 onClick={() => cancelSlotWeather(selectedSlot)}
                 disabled={cancellingWeather || saving || selectedSlot.status === "CLOSED"}
-                className="px-4 py-2 border border-red-300 bg-red-50 text-red-700 rounded-lg text-sm font-medium hover:bg-red-100 disabled:opacity-50"
+                className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 sm:w-auto"
               >
                 {cancellingWeather ? "Cancelling..." : "⛈ Cancel Weather"}
               </button>
-              <div className="flex gap-2">
+              <div className="grid grid-cols-2 gap-2 sm:flex">
                 <button
                   onClick={() => setSelectedSlot(null)}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
@@ -712,7 +723,7 @@ export default function Slots() {
             </p>
 
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="block text-sm text-gray-600">
                   Start Date
                   <div className="mt-1">
@@ -778,7 +789,7 @@ export default function Slots() {
               </label>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 grid grid-cols-1 gap-2 sm:flex sm:justify-end">
               <button
                 onClick={() => setShowBulkEdit(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
@@ -831,7 +842,7 @@ export default function Slots() {
                 />
               </label>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <label className="block text-sm text-gray-600">
                   Start Date
                   <div className="mt-1">
@@ -872,7 +883,7 @@ export default function Slots() {
               </label>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 grid grid-cols-1 gap-2 sm:flex sm:justify-end">
               <button
                 onClick={() => setShowAddSlot(false)}
                 className="px-4 py-2.5 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"
@@ -908,7 +919,7 @@ export default function Slots() {
               </ul>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 grid grid-cols-1 gap-2 sm:flex sm:justify-end">
               <button
                 onClick={() => setShowCancelDay(false)}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50"

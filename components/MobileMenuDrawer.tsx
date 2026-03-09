@@ -7,6 +7,8 @@ import { usePathname } from "next/navigation";
 import NotificationBadge from "./NotificationBadge";
 import RefundBadge from "./RefundBadge";
 import SignOutButton from "./SignOutButton";
+import ThemeToggle from "./ThemeToggle";
+import * as LucideIcons from "lucide-react";
 
 type NavItem = { href: string; label: string; icon: string };
 
@@ -43,7 +45,7 @@ export default function MobileMenuDrawer({ nav }: { nav: NavItem[] }) {
         className={`fixed top-0 left-0 z-[9999] flex flex-col overflow-hidden transition-transform duration-200 ease-in-out ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
-        style={{ backgroundColor: "#101828", width: "16rem", height: "100dvh" }}
+        style={{ backgroundColor: "#101828", width: "min(20rem, 86vw)", height: "100dvh" }}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-[#2a3a54] p-5">
           <h1 className="text-lg font-semibold tracking-tight text-white">Cape Kayak</h1>
@@ -61,7 +63,8 @@ export default function MobileMenuDrawer({ nav }: { nav: NavItem[] }) {
 
         <nav className="flex-1 space-y-1.5 overflow-y-auto p-3">
           {nav.map((n) => {
-            const active = pathname === n.href;
+            const Icon = (LucideIcons as any)[n.icon] || LucideIcons.Circle;
+            const active = n.href === "/" ? pathname === "/" : pathname === n.href || pathname?.startsWith(n.href + "/");
             return (
               <Link
                 key={n.href}
@@ -72,7 +75,9 @@ export default function MobileMenuDrawer({ nav }: { nav: NavItem[] }) {
                     : "text-[#c8d4e7] hover:bg-[#16243a] hover:text-white"
                 }`}
               >
-                <span className="text-base">{n.icon}</span>
+                <span className="flex items-center justify-center text-[#9cb0cf]">
+                  <Icon size={18} strokeWidth={active ? 2.4 : 2} />
+                </span>
                 <span className="flex-1">{n.label}</span>
                 {n.href === "/inbox" && <NotificationBadge />}
                 {n.href === "/refunds" && <RefundBadge />}
@@ -81,8 +86,11 @@ export default function MobileMenuDrawer({ nav }: { nav: NavItem[] }) {
           })}
         </nav>
 
-        <div className="shrink-0 border-t border-[#2a3a54]">
-          <SignOutButton />
+        <div className="shrink-0 border-t border-[#2a3a54] p-3">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-[#2a3a54] bg-[#0f1726] px-3 py-2">
+            <ThemeToggle size="sm" />
+            <SignOutButton />
+          </div>
         </div>
       </div>
     </>

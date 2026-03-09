@@ -229,6 +229,8 @@ export default function NewBookingPage() {
     setResult("");
     try {
       const bookingId = crypto.randomUUID();
+      const adminName = localStorage.getItem("ck_admin_name") || localStorage.getItem("ck_admin_email") || "Admin";
+      const adminEmail = localStorage.getItem("ck_admin_email") || "";
       const insertPayload: Record<string, unknown> = {
         id: bookingId,
         business_id: businessId,
@@ -242,6 +244,8 @@ export default function NewBookingPage() {
         total_amount: totalAmount,
         status,
         source: "ADMIN",
+        created_by_admin_name: adminName,
+        created_by_admin_email: adminEmail,
       };
 
       // Set payment deadline for PENDING bookings based on hold duration
@@ -442,7 +446,7 @@ export default function NewBookingPage() {
                   "\u{1F4CD} *Meeting Point:*\nCape Kayak Adventures\n180 Beach Rd, Three Anchor Bay\nCape Town, 8005\nArrive 15 min early\n\n" +
                   "\u{1F5FA} " + mapsUrl + "\n\n" +
                   "\u{1F392} *Bring:* Sunscreen, hat, towel, water bottle\n\n" +
-                  "\u{1F4DD} *Manage Your Booking:*\nhttps://book.capekayak.co.za/my-bookings\n\n" +
+                  "\u{1F4DD} *Manage Your Booking:*\nhttps://booking-mu-steel.vercel.app/my-bookings\n\n" +
                   "We can\u2019t wait to see you! \u{1F30A}",
               },
             });
@@ -550,9 +554,9 @@ export default function NewBookingPage() {
           </div>
 
           {/* Right: availability calendar */}
-          <div className="flex flex-col items-center">
+          <div className="flex w-full flex-col items-center lg:max-w-[340px]">
             <label className={`text-sm mb-1 self-start ${missingField === "date" ? "text-red-500 font-medium" : "text-gray-600"}`}>Select date <span className="text-red-500">*</span></label>
-            <div className={`transition-colors rounded-xl ${missingField === "date" ? "ring-2 ring-red-500" : ""}`}>
+            <div className={`w-full overflow-x-auto rounded-xl transition-colors ${missingField === "date" ? "ring-2 ring-red-500" : ""}`}>
               <AvailabilityCalendar
                 value={bookingDate}
                 onChange={(v) => { setBookingDate(v); setMissingField(null); }}
@@ -564,7 +568,7 @@ export default function NewBookingPage() {
 
             {/* Slot color legend */}
             {availableSlots.length > 0 && (
-              <div className="mt-4 flex flex-col gap-2 w-full pt-4 border-t border-gray-100">
+              <div className="mt-4 flex w-full flex-col gap-2 border-t border-gray-100 pt-4">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Time Slots Available</p>
                 {availableSlots.slice(0, 4).map((slot, i) => {
                   const available = Math.max((slot.capacity_total || 0) - (slot.booked || 0), 0);
@@ -729,11 +733,11 @@ export default function NewBookingPage() {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex flex-col items-stretch gap-3 sm:flex-row sm:items-center">
         <button
           onClick={createBooking}
           disabled={submitting || loadingTours || loadingSlots}
-          className="rounded-lg bg-[#0f595e] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0b4347] disabled:opacity-50 transition-colors shadow-sm"
+          className="w-full rounded-lg bg-[#0f595e] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#0b4347] disabled:opacity-50 transition-colors shadow-sm sm:w-auto"
         >
           {submitting ? "Processing..." : `Create Booking · ${fmtCurrency(totalAmount)}`}
         </button>

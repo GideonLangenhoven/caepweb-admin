@@ -121,12 +121,12 @@ export default function PeakPricingPage() {
 
         <div className="space-y-3 mb-4">
           {tours.map(t => (
-            <div key={t.id} className="flex items-center gap-3 border border-gray-100 rounded-lg p-3">
+            <div key={t.id} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center">
               <div className="flex-1">
                 <p className="font-semibold text-sm">{t.name}</p>
                 <p className="text-xs text-gray-400">Normal: R{t.base_price_per_person}</p>
               </div>
-              <div className="w-32">
+              <div className="w-full sm:w-32">
                 <label className="text-xs text-gray-500 block mb-1">Peak Price</label>
                 <input type="number" value={peakPrices[t.id] || t.peak_price_per_person || ""}
                   onChange={e => setPeakPrices({ ...peakPrices, [t.id]: e.target.value })}
@@ -152,7 +152,7 @@ export default function PeakPricingPage() {
         ) : (
           <div className="space-y-2">
             {peakRanges.map((r, i) => (
-              <div key={i} className="flex items-center justify-between border border-gray-100 rounded-lg p-3">
+              <div key={i} className="flex flex-col gap-3 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="font-semibold text-sm">
                     {new Date(r.startDate).toLocaleDateString("en-ZA", { day: "numeric", month: "short" })} — {new Date(r.endDate).toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "numeric" })}

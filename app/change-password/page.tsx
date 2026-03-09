@@ -1,17 +1,26 @@
 "use client";
-import { useState } from "react";
-import { supabase } from "../lib/supabase";
 
-async function sha256(str: string) {
-  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { supabase } from "../lib/supabase";
+import {
+  completeAdminPasswordSetup,
+  sendAdminSetupLink,
+  sha256,
+  validateAdminSetupToken,
+} from "../lib/admin-auth";
 
 var MAX_ATTEMPTS = 5;
 var LOCKOUT_DURATION = 30 * 60 * 1000;
 
 export default function ChangePasswordPage() {
-  var [email, setEmail] = useState("");
+  var searchParams = useSearchParams();
+  var mode = searchParams.get("mode");
+  var token = searchParams.get("token") || "";
+  var setupEmailParam = searchParams.get("email") || "";
+  var setupMode = useMemo(() => mode === "setup" && !!token && !!setupEmailParam, [mode, token, setupEmailParam]);
+
+  var [email, setEmail] = useState(setupEmailParam);
   var [currentPass, setCurrentPass] = useState("");
   var [newPass, setNewPass] = useState("");
   var [confirmPass, setConfirmPass] = useState("");
@@ -20,6 +29,47 @@ export default function ChangePasswordPage() {
   var [success, setSuccess] = useState(false);
   var [locked, setLocked] = useState(false);
   var [resetSent, setResetSent] = useState(false);
+  var [tokenChecking, setTokenChecking] = useState(setupMode);
+  var [tokenValid, setTokenValid] = useState(false);
+  var [setupName, setSetupName] = useState("");
+  var [resetEmail, setResetEmail] = useState(setupEmailParam);
+
+  useEffect(() => {
+    setEmail(setupEmailParam);
+    setResetEmail(setupEmailParam);
+  }, [setupEmailParam]);
+
+  useEffect(() => {
+    async function validate() {
+      if (!setupMode) {
+        setTokenChecking(false);
+        setTokenValid(false);
+        return;
+      }
+
+      setTokenChecking(true);
+      setError("");
+      try {
+        var admin = await validateAdminSetupToken(setupEmailParam, token);
+        if (!admin) {
+          setTokenValid(false);
+          setError("This password setup link is invalid or has expired.");
+        } else {
+          setTokenValid(true);
+          setSetupName(admin.name || "");
+          setEmail(admin.email);
+          setResetEmail(admin.email);
+        }
+      } catch (validateError) {
+        console.error("Failed to validate password setup token:", validateError);
+        setTokenValid(false);
+        setError("Could not verify this password setup link.");
+      }
+      setTokenChecking(false);
+    }
+
+    validate();
+  }, [setupEmailParam, setupMode, token]);
 
   function isLocked() {
     var lockUntil = Number(localStorage.getItem("ck_cp_lock_until") || "0");
@@ -31,36 +81,43 @@ export default function ChangePasswordPage() {
     return false;
   }
 
-  async function sendResetEmail(targetEmail: string) {
-    var { data: admin } = await supabase
+  async function requestResetLink(targetEmail: string) {
+    var normalizedEmail = targetEmail.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError("Enter an email address first.");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    var { data: admin, error: adminError } = await supabase
       .from("admin_users")
-      .select("id, email")
-      .eq("email", targetEmail)
+      .select("id, email, name")
+      .eq("email", normalizedEmail)
       .maybeSingle();
 
-    if (!admin) return;
+    if (adminError) {
+      setLoading(false);
+      setError("Failed to request a password link: " + adminError.message);
+      return;
+    }
 
-    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    var tempPass = "";
-    for (var i = 0; i < 10; i++) tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
-
-    var tempHash = await sha256(tempPass);
-    await supabase.from("admin_users").update({ password_hash: tempHash }).eq("id", admin.id);
+    if (!admin) {
+      setLoading(false);
+      setError("No admin account exists for that email.");
+      return;
+    }
 
     try {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          type: "ADMIN_WELCOME",
-          data: {
-            email: admin.email,
-            temp_password: tempPass,
-            change_password_url: window.location.origin + "/change-password",
-          },
-        },
-      });
-    } catch {}
+      await sendAdminSetupLink(admin, "RESET");
+      setResetSent(true);
+    } catch (resetError) {
+      console.error("Failed to send password setup link:", resetError);
+      setError("Failed to send the password setup email.");
+    }
 
-    setResetSent(true);
+    setLoading(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -69,6 +126,28 @@ export default function ChangePasswordPage() {
 
     if (isLocked()) {
       setLocked(true);
+      return;
+    }
+
+    if (setupMode) {
+      if (!newPass || !confirmPass) {
+        return setError("Enter and confirm your new password.");
+      }
+      if (newPass.length < 8) {
+        return setError("New password must be at least 8 characters.");
+      }
+      if (newPass !== confirmPass) {
+        return setError("New passwords do not match.");
+      }
+
+      setLoading(true);
+      try {
+        await completeAdminPasswordSetup(setupEmailParam, token, newPass);
+        setSuccess(true);
+      } catch (setupError) {
+        setError(setupError instanceof Error ? setupError.message : "Failed to create your password.");
+      }
+      setLoading(false);
       return;
     }
 
@@ -101,7 +180,7 @@ export default function ChangePasswordPage() {
       if (failCount >= MAX_ATTEMPTS) {
         localStorage.setItem("ck_cp_lock_until", String(Date.now() + LOCKOUT_DURATION));
         setLocked(true);
-        sendResetEmail(email.trim().toLowerCase());
+        await requestResetLink(email.trim().toLowerCase());
         return;
       }
 
@@ -111,7 +190,13 @@ export default function ChangePasswordPage() {
     var newHash = await sha256(newPass);
     var { error: updateErr } = await supabase
       .from("admin_users")
-      .update({ password_hash: newHash })
+      .update({
+        password_hash: newHash,
+        password_set_at: new Date().toISOString(),
+        must_set_password: false,
+        setup_token_hash: null,
+        setup_token_expires_at: null,
+      })
       .eq("id", user.id);
 
     setLoading(false);
@@ -120,7 +205,6 @@ export default function ChangePasswordPage() {
       return setError("Failed to update password: " + updateErr.message);
     }
 
-    // Clear fail counters on success
     localStorage.removeItem("ck_cp_fail_count");
     localStorage.removeItem("ck_cp_lock_until");
     localStorage.removeItem("ck_fail_count");
@@ -132,9 +216,18 @@ export default function ChangePasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ck-bg)] px-4">
         <div className="ui-surface-elevated w-full max-w-sm p-8 text-center">
-          <h1 className="text-xl font-semibold tracking-tight text-[var(--ck-text-strong)] mb-3">Password Updated</h1>
-          <p className="text-sm text-[var(--ck-text-muted)] mb-6">Your password has been changed successfully. You can now sign in with your new password.</p>
-          <a href="/" className="inline-block w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 text-center">
+          <h1 className="mb-3 text-xl font-semibold tracking-tight text-[var(--ck-text-strong)]">
+            {setupMode ? "Password Created" : "Password Updated"}
+          </h1>
+          <p className="mb-6 text-sm text-[var(--ck-text-muted)]">
+            {setupMode
+              ? "Your password has been created successfully. You can now sign in."
+              : "Your password has been changed successfully. You can now sign in with your new password."}
+          </p>
+          <a
+            href="/"
+            className="inline-block w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-center text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0"
+          >
             Go to Dashboard
           </a>
         </div>
@@ -146,13 +239,13 @@ export default function ChangePasswordPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--ck-bg)] px-4">
         <div className="ui-surface-elevated w-full max-w-sm p-8 text-center">
-          <div className="bg-red-50 border border-red-200 rounded-xl p-5 mb-4">
-            <p className="text-sm font-semibold text-red-700 mb-2">Too Many Attempts</p>
-            <p className="text-xs text-red-600 leading-relaxed">
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-5">
+            <p className="mb-2 text-sm font-semibold text-red-700">Too Many Attempts</p>
+            <p className="text-xs leading-relaxed text-red-600">
               Your account has been locked for 30 minutes due to too many incorrect password attempts.
               {resetSent
-                ? " A new temporary password has been sent to your email."
-                : " If this is your account, a reset email will be sent."}
+                ? " A secure password setup email has been sent."
+                : " If this is your account, a secure password setup email will be sent."}
             </p>
           </div>
           <a href="/" className="text-xs text-[var(--ck-text-muted)] hover:underline">Back to sign in</a>
@@ -164,59 +257,136 @@ export default function ChangePasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--ck-bg)] px-4">
       <div className="ui-surface-elevated w-full max-w-sm p-8">
-        <div className="text-center mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-[var(--ck-text-strong)] mb-1">Change Password</h1>
-          <p className="text-sm text-[var(--ck-text-muted)]">Enter your current password and choose a new one</p>
+        <div className="mb-6 text-center">
+          <h1 className="mb-1 text-xl font-semibold tracking-tight text-[var(--ck-text-strong)]">
+            {setupMode ? "Create Password" : "Change Password"}
+          </h1>
+          <p className="text-sm text-[var(--ck-text-muted)]">
+            {setupMode
+              ? `Set a password for your admin account${setupName ? `, ${setupName}` : ""}.`
+              : "Enter your current password and choose a new one."}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input
-            type="email"
-            value={email}
-            onChange={e => { setEmail(e.target.value); setError(""); }}
-            placeholder="Email address"
-            autoComplete="email"
-            className="ui-control w-full px-4 py-3 text-sm outline-none"
-          />
-          <input
-            type="password"
-            value={currentPass}
-            onChange={e => { setCurrentPass(e.target.value); setError(""); }}
-            placeholder="Current / temporary password"
-            autoComplete="current-password"
-            className="ui-control w-full px-4 py-3 text-sm outline-none"
-          />
-          <input
-            type="password"
-            value={newPass}
-            onChange={e => { setNewPass(e.target.value); setError(""); }}
-            placeholder="New password (min 8 characters)"
-            autoComplete="new-password"
-            className="ui-control w-full px-4 py-3 text-sm outline-none"
-          />
-          <input
-            type="password"
-            value={confirmPass}
-            onChange={e => { setConfirmPass(e.target.value); setError(""); }}
-            placeholder="Confirm new password"
-            autoComplete="new-password"
-            className="ui-control w-full px-4 py-3 text-sm outline-none"
-          />
+        {tokenChecking ? (
+          <p className="text-center text-sm text-[var(--ck-text-muted)]">Validating secure link...</p>
+        ) : setupMode && !tokenValid ? (
+          <div className="space-y-4">
+            {error && <p className="text-xs font-medium text-[var(--ck-danger)]">{error}</p>}
+            <div className="rounded-xl border border-[var(--ck-border-subtle)] bg-[var(--ck-bg)] p-4">
+              <p className="text-sm font-medium text-[var(--ck-text-strong)]">Need a fresh password link?</p>
+              <p className="mt-1 text-xs text-[var(--ck-text-muted)]">Enter your admin email and we will send a new secure setup link.</p>
+              <input
+                type="email"
+                value={resetEmail}
+                onChange={(e) => { setResetEmail(e.target.value); setError(""); }}
+                placeholder="Email address"
+                autoComplete="email"
+                className="ui-control mt-3 w-full px-4 py-3 text-sm outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => requestResetLink(resetEmail)}
+                disabled={loading}
+                className="mt-3 w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50"
+              >
+                {loading ? "Sending..." : "Email New Setup Link"}
+              </button>
+              {resetSent && <p className="mt-3 text-xs text-emerald-700">A new secure password setup link has been sent.</p>}
+            </div>
+            <p className="text-center text-xs text-[var(--ck-text-muted)]">
+              <a href="/" className="hover:underline">Back to sign in</a>
+            </p>
+          </div>
+        ) : (
+          <>
+            <form onSubmit={handleSubmit} className="space-y-3">
+              {!setupMode && (
+                <>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                    placeholder="Email address"
+                    autoComplete="email"
+                    className="ui-control w-full px-4 py-3 text-sm outline-none"
+                  />
+                  <input
+                    type="password"
+                    value={currentPass}
+                    onChange={(e) => { setCurrentPass(e.target.value); setError(""); }}
+                    placeholder="Current password"
+                    autoComplete="current-password"
+                    className="ui-control w-full px-4 py-3 text-sm outline-none"
+                  />
+                </>
+              )}
+              {setupMode && (
+                <input
+                  type="email"
+                  value={email}
+                  readOnly
+                  className="ui-control w-full cursor-not-allowed px-4 py-3 text-sm outline-none opacity-70"
+                />
+              )}
+              <input
+                type="password"
+                value={newPass}
+                onChange={(e) => { setNewPass(e.target.value); setError(""); }}
+                placeholder="New password (min 8 characters)"
+                autoComplete="new-password"
+                className="ui-control w-full px-4 py-3 text-sm outline-none"
+              />
+              <input
+                type="password"
+                value={confirmPass}
+                onChange={(e) => { setConfirmPass(e.target.value); setError(""); }}
+                placeholder="Confirm new password"
+                autoComplete="new-password"
+                className="ui-control w-full px-4 py-3 text-sm outline-none"
+              />
 
-          {error && <p className="text-xs text-[var(--ck-danger)] font-medium">{error}</p>}
+              {error && <p className="text-xs font-medium text-[var(--ck-danger)]">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50"
-          >
-            {loading ? "Updating..." : "Change Password"}
-          </button>
-        </form>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50"
+              >
+                {loading
+                  ? (setupMode ? "Creating..." : "Updating...")
+                  : (setupMode ? "Create Password" : "Change Password")}
+              </button>
+            </form>
 
-        <p className="mt-4 text-center text-xs text-[var(--ck-text-muted)]">
-          <a href="/" className="hover:underline">Back to sign in</a>
-        </p>
+            {!setupMode && (
+              <div className="mt-6 border-t border-[var(--ck-border-subtle)] pt-4">
+                <p className="text-center text-xs text-[var(--ck-text-muted)]">Forgot your password?</p>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={(e) => { setResetEmail(e.target.value); setError(""); }}
+                  placeholder="Email a secure reset link"
+                  autoComplete="email"
+                  className="ui-control mt-3 w-full px-4 py-3 text-sm outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => requestResetLink(resetEmail)}
+                  disabled={loading}
+                  className="mt-3 w-full rounded-xl border border-[var(--ck-border-subtle)] py-3 text-sm font-semibold text-[var(--ck-text-strong)] hover:bg-[var(--ck-bg)] disabled:opacity-50"
+                >
+                  {loading ? "Sending..." : "Email Reset Link"}
+                </button>
+                {resetSent && <p className="mt-3 text-xs text-emerald-700">A secure password setup link has been sent.</p>}
+              </div>
+            )}
+
+            <p className="mt-4 text-center text-xs text-[var(--ck-text-muted)]">
+              <a href="/" className="hover:underline">Back to sign in</a>
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

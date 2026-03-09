@@ -158,14 +158,16 @@ export default function AvailabilityCalendar({ value, onChange, tourId, business
         <SlotDataCtx.Provider value={daySlots}>
             <MinQtyCtx.Provider value={minQty}>
                 <style>{`
-                .avail-cal { --rdp-cell-size: 44px; --rdp-accent-color: var(--ck-accent); --rdp-background-color: var(--ck-border-subtle); margin: 0; }
+                .avail-cal { --rdp-cell-size: 40px; --rdp-accent-color: var(--ck-accent); --rdp-background-color: var(--ck-border-subtle); margin: 0; width: 100%; }
                 .avail-cal .rdp-months { font-family: inherit; }
+                .avail-cal .rdp-month { width: 100%; }
+                .avail-cal .rdp-table { width: 100%; max-width: 100%; }
                 .avail-cal .rdp-caption_label { font-weight: 700; color: var(--ck-text-strong); }
                 .avail-cal .rdp-head_cell { font-weight: 600; color: var(--ck-text-muted); font-size: 0.75rem; text-transform: uppercase; }
                 .avail-cal td { padding: 0 !important; border: 1px solid var(--ck-border-subtle); border-radius: 8px; }
                 .avail-cal td button {
                     display: flex; align-items: center; justify-content: center;
-                    width: 44px; height: 44px; border-radius: 7px; border: none;
+                    width: 40px; height: 40px; border-radius: 7px; border: none;
                     cursor: pointer; font-weight: 500; font-size: 14px;
                     background: transparent; color: var(--ck-text);
                     transition: background 0.15s;
@@ -180,6 +182,10 @@ export default function AvailabilityCalendar({ value, onChange, tourId, business
                 .avail-cal td[data-outside] button { opacity: 0.4; cursor: default; color: var(--ck-text-muted); }
                 .avail-cal td[data-outside] button:hover { background: transparent; }
                 .avail-cal table { border-collapse: separate; border-spacing: 2px; }
+                @media (min-width: 640px) {
+                    .avail-cal { --rdp-cell-size: 44px; }
+                    .avail-cal td button { width: 44px; height: 44px; }
+                }
             `}</style>
                 <DayPicker
                     className="avail-cal"

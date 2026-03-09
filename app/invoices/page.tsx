@@ -501,19 +501,19 @@ export default function Invoices() {
         <span className="font-mono">R{money(totalOutstanding)}</span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-white p-3 text-sm">
+      <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white p-3 text-sm sm:flex-row sm:flex-wrap sm:items-center">
         <span className="font-medium text-gray-700">Sort by:</span>
         <select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value as "booking_desc" | "booking_asc" | "created_desc" | "created_asc")}
-          className="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:w-auto"
         >
           <option value="booking_desc">Booking date (newest first)</option>
           <option value="booking_asc">Booking date (oldest first)</option>
           <option value="created_desc">Invoice created (newest first)</option>
           <option value="created_asc">Invoice created (oldest first)</option>
         </select>
-        <span className="ml-3 font-medium text-gray-700">Exact date:</span>
+        <span className="font-medium text-gray-700 sm:ml-3">Exact date:</span>
         <DatePicker value={exactDate} onChange={setExactDate} />
         {exactDate && (
           <button
@@ -543,7 +543,47 @@ export default function Invoices() {
                 </span>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+              <div className="space-y-3 md:hidden">
+                {day.invoices.map((inv) => {
+                  const pay = payment(inv);
+                  const isBusy = busyId === inv.id || resendingId === inv.id;
+                  return (
+                    <div key={inv.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-sm font-bold text-blue-600">{invoiceNumber(inv)}</p>
+                          <p className="mt-1 text-sm font-semibold text-gray-800">{asText(inv.customer_name, "-")}</p>
+                          <p className="text-xs text-gray-500">{asText(inv.customer_email, "")}</p>
+                          <p className="mt-1 text-xs text-gray-400">{asText(inv.tour_name, "-")}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-gray-800">R{money(pay.total)}</p>
+                          <p className={`text-xs font-medium ${pay.balanceDue > 0 ? "text-amber-700" : "text-emerald-700"}`}>
+                            Due R{money(pay.balanceDue)}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                        <div className="rounded-lg bg-gray-50 p-2">
+                          <p className="text-[11px] text-gray-500">Paid</p>
+                          <p className="font-semibold">R{money(pay.amountPaid)}</p>
+                        </div>
+                        <div className="rounded-lg bg-gray-50 p-2">
+                          <p className="text-[11px] text-gray-500">Booking</p>
+                          <p className="font-mono text-xs font-semibold">{bookingRef(inv)}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-3 gap-2">
+                        <button onClick={() => handleDownload(inv)} disabled={isBusy} className="rounded-lg border border-gray-300 bg-white px-2.5 py-2 text-xs font-medium hover:bg-gray-50 disabled:opacity-50">Download</button>
+                        <button onClick={() => handlePrint(inv)} disabled={isBusy} className="rounded-lg bg-gray-900 px-2.5 py-2 text-xs font-medium text-white hover:bg-gray-800 disabled:opacity-50">Print</button>
+                        <button onClick={() => handleResend(inv)} disabled={isBusy} className="rounded-lg bg-blue-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50">{resendingId === inv.id ? "Resending..." : "Resend"}</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden overflow-x-auto rounded-xl border border-gray-200 bg-white md:block">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50">
                     <tr>

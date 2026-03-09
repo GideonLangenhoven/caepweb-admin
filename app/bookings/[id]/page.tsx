@@ -54,6 +54,8 @@ interface BookingDetail {
   refund_amount: number | null;
   refund_notes: string | null;
   invoice_id: string | null;
+  created_by_admin_name: string | null;
+  created_by_admin_email: string | null;
   created_at: string;
   tours: { name?: string; duration_minutes?: number; base_price_per_person?: number } | null;
   slots: { start_time?: string; capacity_total?: number; booked?: number; status?: string } | null;
@@ -141,7 +143,13 @@ function buildTimeline(
   events.push({
     time: booking.created_at,
     label: "Booking created",
-    detail: `Source: ${SOURCE_LABELS[booking.source] || booking.source} | Status: ${booking.status === "CANCELLED" ? "PENDING" : booking.status}`,
+    detail: [
+      `Source: ${SOURCE_LABELS[booking.source] || booking.source}`,
+      booking.source === "ADMIN" && (booking.created_by_admin_name || booking.created_by_admin_email)
+        ? `Created by: ${booking.created_by_admin_name || booking.created_by_admin_email}`
+        : "",
+      `Status: ${booking.status === "CANCELLED" ? "PENDING" : booking.status}`,
+    ].filter(Boolean).join(" | "),
     icon: FileText,
     color: "text-blue-600",
   });

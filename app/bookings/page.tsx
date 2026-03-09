@@ -831,7 +831,7 @@ export default function Bookings() {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">📋 Bookings</h2>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
         <button onClick={() => shiftRange(-7)} className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm hover:bg-gray-50">
           ← Prev Week
         </button>
@@ -857,12 +857,14 @@ export default function Bookings() {
           Today
         </button>
 
-        <div className="ml-auto flex items-center gap-2 border-l border-gray-300 pl-4">
+        <div className="flex w-full items-center gap-2 pt-1 sm:ml-auto sm:w-auto sm:border-l sm:border-gray-300 sm:pl-4 sm:pt-0">
           <label className="text-sm font-medium text-gray-600">Filter Month:</label>
-          <MonthPicker
-            onChange={handleMonthChange}
-            value={`${rangeStart.getFullYear()}-${String(rangeStart.getMonth() + 1).padStart(2, "0")}`}
-          />
+          <div className="min-w-0 flex-1 sm:flex-none">
+            <MonthPicker
+              onChange={handleMonthChange}
+              value={`${rangeStart.getFullYear()}-${String(rangeStart.getMonth() + 1).padStart(2, "0")}`}
+            />
+          </div>
         </div>
       </div>
 
@@ -900,8 +902,8 @@ export default function Bookings() {
                         <th className="w-16 p-3 text-left font-semibold text-gray-600">Pax</th>
                         <th className="hidden p-3 text-left font-semibold text-gray-600 md:table-cell">Details</th>
                         <th className="hidden p-3 text-left font-semibold text-gray-600 md:table-cell">Service</th>
-                        <th className="p-3 text-right font-semibold text-gray-600">Price</th>
-                        <th className="p-3 text-right font-semibold text-gray-600">Paid</th>
+                        <th className="hidden p-3 text-right font-semibold text-gray-600 sm:table-cell">Price</th>
+                        <th className="hidden p-3 text-right font-semibold text-gray-600 sm:table-cell">Paid</th>
                         <th className="p-3 text-right font-semibold text-gray-600">Due</th>
                         <th className="hidden p-3 text-left font-semibold text-gray-600 lg:table-cell">Actions</th>
                       </tr>
@@ -941,8 +943,8 @@ export default function Bookings() {
                         <td className="p-3">{day.totalPax}</td>
                         <td className="hidden p-3 md:table-cell"></td>
                         <td className="hidden p-3 md:table-cell"></td>
-                        <td className="p-3 text-right">{fmtCurrency(day.totalPrice)}</td>
-                        <td className="p-3 text-right">{fmtCurrency(day.totalPaid)}</td>
+                        <td className="hidden p-3 text-right sm:table-cell">{fmtCurrency(day.totalPrice)}</td>
+                        <td className="hidden p-3 text-right sm:table-cell">{fmtCurrency(day.totalPaid)}</td>
                         <td className={`p-3 text-right ${day.totalDue > 0 ? "text-red-600" : "text-gray-700"}`}>{fmtCurrency(day.totalDue)}</td>
                         <td className="hidden p-3 lg:table-cell"></td>
                       </tr>
@@ -957,7 +959,7 @@ export default function Bookings() {
 
       {editBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5">
+          <div className="w-full max-w-lg rounded-t-2xl border border-gray-200 bg-white p-5 sm:rounded-xl">
             <h3 className="mb-4 text-lg font-semibold">Edit Booking</h3>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="text-sm text-gray-600 md:col-span-2">
@@ -1020,7 +1022,7 @@ export default function Bookings() {
                 </select>
               </label>
             </div>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:justify-end">
               <button onClick={() => setEditBooking(null)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50">
                 Close
               </button>
@@ -1038,7 +1040,7 @@ export default function Bookings() {
 
       {rebookBooking && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5">
+          <div className="w-full max-w-lg rounded-t-2xl border border-gray-200 bg-white p-5 sm:rounded-xl">
             <h3 className="mb-1 text-lg font-semibold">Rebook Booking</h3>
             <p className="mb-4 text-xs text-gray-500">
               {rebookBooking.customer_name} · {rebookBooking.tours?.name || "Tour"}
@@ -1082,7 +1084,7 @@ export default function Bookings() {
                 <option value="VOUCHER">Issue Gift Voucher (Store Credit)</option>
               </select>
             </label>
-            <div className="mt-4 flex justify-end gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:justify-end">
               <button onClick={() => setRebookBooking(null)} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50">
                 Close
               </button>
@@ -1100,7 +1102,7 @@ export default function Bookings() {
 
       {paymentLinkUrl && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4">
-          <div className="w-full max-w-lg rounded-xl border border-gray-200 bg-white p-5">
+          <div className="w-full max-w-lg rounded-t-2xl border border-gray-200 bg-white p-5 sm:rounded-xl">
             <h3 className="mb-1 text-lg font-semibold">Payment Link Sent</h3>
             <p className="mb-4 text-xs text-gray-500">Booking ref: {paymentLinkRef}</p>
             <div className="mb-3 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
@@ -1108,7 +1110,7 @@ export default function Bookings() {
             </div>
             <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
               <p className="mb-2 text-xs font-medium text-gray-500">You can also copy the link:</p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   readOnly
                   value={paymentLinkUrl}
@@ -1129,7 +1131,7 @@ export default function Bookings() {
             <p className="mt-3 text-xs text-gray-500">
               Once the customer pays, the booking will automatically update to PAID on this page.
             </p>
-            <div className="mt-4 flex justify-end">
+            <div className="mt-4 grid grid-cols-1 sm:flex sm:justify-end">
               <button
                 onClick={() => setPaymentLinkUrl(null)}
                 className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50"
@@ -1199,12 +1201,13 @@ function SlotRows({
             ›
           </span>
           {slot.timeLabel}
+          <span className="mt-1 block text-[11px] font-normal text-gray-500 sm:hidden">{services || "No services"} · Due {fmtCurrency(slot.totalDue)}</span>
         </td>
         <td className="p-3 font-semibold">{slot.totalPax}</td>
         <td className="hidden p-3 text-gray-500 md:table-cell"></td>
         <td className="hidden p-3 text-gray-500 md:table-cell">{services}</td>
-        <td className="p-3 text-right">{fmtCurrency(slot.totalPrice)}</td>
-        <td className="p-3 text-right">{fmtCurrency(slot.totalPaid)}</td>
+        <td className="hidden p-3 text-right sm:table-cell">{fmtCurrency(slot.totalPrice)}</td>
+        <td className="hidden p-3 text-right sm:table-cell">{fmtCurrency(slot.totalPaid)}</td>
         <td className={`p-3 text-right font-semibold ${slot.totalDue > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(slot.totalDue)}</td>
         <td className="hidden p-3 lg:table-cell">
           <button
@@ -1246,6 +1249,9 @@ function SlotRows({
                       Ref: {b.external_ref}
                     </span>
                   )}
+                  <span className="text-[11px] text-gray-500 lg:hidden pl-[18px]">
+                    {b.tours?.name || "—"} · {b.phone || "No mobile"}
+                  </span>
                   {b.payment_deadline && !isPaid(b.status) && b.status !== "CANCELLED" && (
                     <span className={`text-[10px] font-medium lg:pl-0 pl-[18px] ${new Date(b.payment_deadline) < new Date() ? "text-red-600" : "text-amber-600"}`}>
                       {new Date(b.payment_deadline) < new Date()
@@ -1289,8 +1295,8 @@ function SlotRows({
                 </div>
               </td>
               <td className="hidden p-3 align-top md:table-cell">{b.tours?.name || "—"}</td>
-              <td className="p-3 text-right align-top">{fmtCurrency(Number(b.total_amount || 0))}</td>
-              <td className="p-3 text-right align-top">{fmtCurrency(paid)}</td>
+              <td className="hidden p-3 text-right align-top sm:table-cell">{fmtCurrency(Number(b.total_amount || 0))}</td>
+              <td className="hidden p-3 text-right align-top sm:table-cell">{fmtCurrency(paid)}</td>
               <td className={`p-3 text-right align-top font-medium ${due > 0 ? "text-red-600" : "text-green-600"}`}>{fmtCurrency(due)}</td>
               <td className="hidden p-3 align-top lg:table-cell">
                 <div className="space-y-1">

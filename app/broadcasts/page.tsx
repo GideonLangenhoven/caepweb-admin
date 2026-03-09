@@ -149,7 +149,7 @@ export default function BroadcastsPage() {
     return new Date(iso).toLocaleString("en-ZA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Africa/Johannesburg" });
   }
 
-  var MANAGE_BOOKING_URL = "https://book.capekayak.co.za/my-bookings";
+  var MANAGE_BOOKING_URL = "https://booking-mu-steel.vercel.app/my-bookings";
 
   async function sendWeatherCancel() {
     if (selectedSlotIds.length === 0) return;
@@ -271,10 +271,10 @@ export default function BroadcastsPage() {
 
   return (
     <div className="max-w-6xl">
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h1 className="text-2xl font-bold">📢 Broadcasts</h1>
         <button onClick={() => { setWeatherMode(!weatherMode); setWeatherResult(null); }}
-          className={"px-4 py-2 rounded-lg text-sm font-semibold border transition-colors " + (weatherMode ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
+          className={"w-full rounded-lg border px-4 py-2 text-sm font-semibold transition-colors sm:w-auto " + (weatherMode ? "bg-red-600 text-white border-red-600" : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50")}>
           {weatherMode ? "⛈ Weather Mode ON" : "⛈ Weather Cancel"}
         </button>
       </div>
@@ -362,7 +362,7 @@ export default function BroadcastsPage() {
         {/* Right side: customers + compose */}
         <div className="lg:col-span-8 space-y-4">
           {/* Selected summary */}
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex items-center gap-4">
+          <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center">
             <div className="flex-1">
               <p className="font-semibold text-sm">{selectedSlotIds.length} slot{selectedSlotIds.length !== 1 ? "s" : ""} selected</p>
               <p className="text-xs text-gray-400">{bookings.length} customer{bookings.length !== 1 ? "s" : ""} will be notified</p>
@@ -376,7 +376,23 @@ export default function BroadcastsPage() {
           {bookings.length > 0 && (
             <div className="bg-white border border-gray-200 rounded-xl p-4">
               <h3 className="font-semibold text-sm mb-3">Customers ({bookings.length})</h3>
-              <div className="max-h-48 overflow-auto">
+              <div className="space-y-2 sm:hidden">
+                {bookings.map(b => (
+                  <div key={b.id} className="rounded-lg border border-gray-100 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-800">{b.customer_name}</p>
+                        <p className="text-xs text-gray-500">{(b as any).tours?.name || "—"} · {(b as any).slots?.start_time ? fmtTime((b as any).slots.start_time) : "—"}</p>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-700">{b.qty} pax</p>
+                    </div>
+                    <p className="mt-2 text-xs text-gray-400">
+                      {b.phone ? "WhatsApp" : ""}{b.phone && b.email ? " · " : ""}{b.email ? "Email" : "No contact"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="hidden max-h-48 overflow-auto sm:block">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-gray-400 border-b border-gray-100">
@@ -456,7 +472,7 @@ export default function BroadcastsPage() {
             {history.length === 0 ? <p className="text-sm text-gray-400">None yet.</p> : (
               <div className="space-y-2 max-h-48 overflow-auto">
                 {history.map(h => (
-                  <div key={h.id} className="flex items-center gap-3 border border-gray-100 rounded-lg p-3">
+                  <div key={h.id} className="flex flex-col gap-2 rounded-lg border border-gray-100 p-3 sm:flex-row sm:items-center sm:gap-3">
                     <span className={"text-xs font-medium px-2 py-0.5 rounded-full shrink-0 " + (h.target_group === "AFFECTED_BOOKINGS" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700")}>
                       {h.target_group === "AFFECTED_BOOKINGS" ? "⛈" : "📢"}
                     </span>

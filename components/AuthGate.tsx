@@ -2,12 +2,8 @@
 import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { supabase } from "../app/lib/supabase";
+import { sendAdminSetupLink, sha256 } from "../app/lib/admin-auth";
 import { BusinessProvider } from "./BusinessContext";
-
-async function sha256(str: string) {
-  var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
 
 var PUBLIC_PATHS = ["/change-password", "/operators", "/case-study/cape-kayak", "/compare/manual-vs-disconnected-tools"];
 var SESSION_TIMEOUT = 12 * 60 * 60 * 1000;
@@ -29,6 +25,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   var [businessId, setBusinessId] = useState("");
   var [businessName, setBusinessName] = useState("");
   var [role, setRole] = useState("");
+  var [notice, setNotice] = useState("");
 
   useEffect(() => {
     validateSession();
@@ -57,7 +54,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
     var { data } = await supabase
       .from("admin_users")
-      .select("role, business_id")
+      .select("role, business_id, name")
       .eq("email", savedEmail)
       .maybeSingle();
 
@@ -74,11 +71,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       setBusinessName(biz?.name || "");
       localStorage.setItem("ck_admin_role", data.role);
       localStorage.setItem("ck_admin_business_id", data.business_id);
+      localStorage.setItem("ck_admin_name", data.name || "");
       setAuthed(true);
     } else if (data) {
       // Admin exists but no business_id — legacy admin, still allow access
       setRole(data.role);
       localStorage.setItem("ck_admin_role", data.role);
+      localStorage.setItem("ck_admin_name", data.name || "");
       setAuthed(true);
     } else {
       clearSession();
@@ -92,6 +91,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("ck_admin_email");
     localStorage.removeItem("ck_admin_time");
     localStorage.removeItem("ck_admin_business_id");
+    localStorage.removeItem("ck_admin_name");
     setAuthed(false);
     setBusinessId("");
     setBusinessName("");
@@ -110,26 +110,40 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     setError("");
-    var hash = await sha256(pass);
-
+    setNotice("");
     var { data: user } = await supabase
       .from("admin_users")
-      .select("role, email, business_id")
+      .select("id, role, email, business_id, name, password_hash, must_set_password")
       .eq("email", email.trim().toLowerCase())
-      .eq("password_hash", hash)
       .maybeSingle();
+
+    if (user && (user.must_set_password || !user.password_hash)) {
+      try {
+        await sendAdminSetupLink({ id: user.id, email: user.email, name: user.name }, "FIRST_LOGIN");
+        setNotice("This admin account still needs a password. A secure setup link has been emailed.");
+      } catch (setupError) {
+        console.error("Failed to send admin setup link:", setupError);
+        setError("This account still needs a password, but the setup email could not be sent.");
+      }
+      setLoading(false);
+      return;
+    }
+
+    var hash = await sha256(pass);
 
     setLoading(false);
 
-    if (user) {
+    if (user && user.password_hash === hash) {
       localStorage.removeItem("ck_fail_count");
       localStorage.removeItem("ck_lock_until");
       localStorage.setItem("ck_admin_auth", "true");
       localStorage.setItem("ck_admin_role", user.role);
       localStorage.setItem("ck_admin_email", email.trim().toLowerCase());
       localStorage.setItem("ck_admin_time", String(Date.now()));
+      localStorage.setItem("ck_admin_name", user.name || "");
 
       setRole(user.role);
+      setNotice("");
 
       if (user.business_id) {
         localStorage.setItem("ck_admin_business_id", user.business_id);
@@ -162,30 +176,14 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   async function sendResetEmail(targetEmail: string) {
     var { data: admin } = await supabase
       .from("admin_users")
-      .select("id, email")
+      .select("id, email, name")
       .eq("email", targetEmail)
       .maybeSingle();
 
     if (!admin) return;
 
-    var chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
-    var tempPass = "";
-    for (var i = 0; i < 10; i++) tempPass += chars.charAt(Math.floor(Math.random() * chars.length));
-
-    var tempHash = await sha256(tempPass);
-    await supabase.from("admin_users").update({ password_hash: tempHash }).eq("id", admin.id);
-
     try {
-      await supabase.functions.invoke("send-email", {
-        body: {
-          type: "ADMIN_WELCOME",
-          data: {
-            email: admin.email,
-            temp_password: tempPass,
-            change_password_url: window.location.origin + "/change-password",
-          },
-        },
-      });
+      await sendAdminSetupLink(admin, "RESET");
     } catch { }
 
     setResetSent(true);
@@ -206,38 +204,39 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
               <p className="text-xs text-red-600 leading-relaxed">
                 Too many failed attempts. Your account has been locked for 30 minutes.
                 {resetSent
-                  ? " A password reset email has been sent."
-                  : " If this is your account, a reset email will be sent."}
+                  ? " A password setup email has been sent."
+                  : " If this is your account, a password setup email will be sent."}
               </p>
             </div>
             <a href="/change-password" className="text-xs text-[var(--ck-text-muted)] hover:underline">
-              Change password
+              Set up or reset password
             </a>
           </div>
         ) : (
           <>
             <input type="email" value={email}
-              onChange={e => { setEmail(e.target.value); setError(""); }}
+              onChange={e => { setEmail(e.target.value); setError(""); setNotice(""); }}
               onKeyDown={e => { if (e.key === "Enter") login(); }}
               placeholder="Email address"
               autoComplete="email"
               className="ui-control mb-3 w-full px-4 py-3 text-sm outline-none" />
 
             <input type="password" value={pass}
-              onChange={e => { setPass(e.target.value); setError(""); }}
+              onChange={e => { setPass(e.target.value); setError(""); setNotice(""); }}
               onKeyDown={e => { if (e.key === "Enter") login(); }}
               placeholder="Password"
               autoComplete="current-password"
               className={"ui-control mb-3 w-full px-4 py-3 text-sm outline-none " + (error ? "border-[var(--ck-danger)] bg-[var(--ck-danger-soft)]" : "")} />
 
             {error && <p className="mb-3 text-xs text-[var(--ck-danger)]">{error}</p>}
+            {notice && <p className="mb-3 text-xs text-emerald-700">{notice}</p>}
 
             <button onClick={login} disabled={loading} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50">
               {loading ? "Signing in..." : "Sign In"}
             </button>
 
             <p className="mt-4 text-xs text-[var(--ck-text-muted)]">
-              <a href="/change-password" className="hover:underline">Change password</a>
+              <a href="/change-password" className="hover:underline">Set up or reset password</a>
             </p>
           </>
         )}

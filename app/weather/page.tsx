@@ -144,10 +144,10 @@ export default function Weather() {
     <div className="space-y-4">
       <h2 className="text-2xl font-bold">Weather Cancellations</h2>
       <p className="text-gray-500 text-sm">Cancel trips due to bad weather. All customers will be notified via WhatsApp and email, and full refunds will be queued.</p>
-      <div className="flex gap-2 items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <label className="text-sm text-gray-600">Reason:</label>
         <input type="text" value={reason} onChange={(e) => setReason(e.target.value)}
-          className="flex-1 max-w-md px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          className="w-full flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 sm:max-w-md" />
       </div>
       {loading ? <p className="text-gray-500">Loading...</p> : slots.length === 0 ? (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500">No upcoming slots with bookings in next 48 hours.</div>
@@ -161,7 +161,7 @@ export default function Weather() {
                 <p className="text-sm text-gray-500">{s.booked} booked · {s.capacity_total} capacity</p>
               </div>
               <button onClick={() => cancelSlot(s.id)} disabled={cancelling === s.id}
-                className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 whitespace-nowrap">
+                className="w-full rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 whitespace-nowrap sm:w-auto">
                 {cancelling === s.id ? "Cancelling..." : "⛈ Cancel & Notify All"}
               </button>
             </div>
