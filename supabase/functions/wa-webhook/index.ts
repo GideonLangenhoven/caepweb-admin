@@ -1362,9 +1362,9 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
         method: "POST", headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: Math.round(sd.total * 100), currency: "ZAR",
-          successUrl: "https://book.capekayak.co.za/success?ref=" + booking.id,
-          cancelUrl: "https://book.capekayak.co.za/cancelled",
-          failureUrl: "https://book.capekayak.co.za/cancelled",
+          successUrl: "https://booking-mu-steel.vercel.app/success?ref=" + booking.id,
+          cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
+          failureUrl: "https://booking-mu-steel.vercel.app/cancelled",
           metadata: { booking_id: booking.id, customer_name: sd.customer_name, qty: String(sd.qty) },
         }),
       });
@@ -1462,9 +1462,9 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
           headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: Math.round(Number(sd.value) * 100), currency: "ZAR",
-            successUrl: "https://book.capekayak.co.za/voucher-confirmed?code=" + vcode,
-            cancelUrl: "https://book.capekayak.co.za/cancelled",
-            failureUrl: "https://book.capekayak.co.za/cancelled",
+            successUrl: "https://booking-mu-steel.vercel.app/voucher-confirmed?code=" + vcode,
+            cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
+            failureUrl: "https://booking-mu-steel.vercel.app/cancelled",
             metadata: { voucher_id: vr.data.id, voucher_code: vcode, type: "GIFT_VOUCHER" },
           }),
         });
@@ -1703,9 +1703,9 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
             method: "POST", headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: Math.round(Number(rpBk.total_amount) * 100), currency: "ZAR",
-              successUrl: "https://book.capekayak.co.za/success?ref=" + rpBk.id,
-              cancelUrl: "https://book.capekayak.co.za/cancelled",
-              failureUrl: "https://book.capekayak.co.za/cancelled",
+              successUrl: "https://booking-mu-steel.vercel.app/success?ref=" + rpBk.id,
+              cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
+              failureUrl: "https://booking-mu-steel.vercel.app/cancelled",
               metadata: { booking_id: rpBk.id, type: "RESEND" },
             }),
           });
@@ -1777,8 +1777,8 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
             method: "POST", headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: Math.round(depAmount * 100), currency: "ZAR",
-              successUrl: "https://book.capekayak.co.za/success?ref=" + cashBkr.data.id,
-              cancelUrl: "https://book.capekayak.co.za/cancelled",
+              successUrl: "https://booking-mu-steel.vercel.app/success?ref=" + cashBkr.data.id,
+              cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
               metadata: { booking_id: cashBkr.data.id, type: "DEPOSIT_50" },
             }),
           });
@@ -2031,9 +2031,9 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
           method: "POST", headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: Math.round(diffAmount * 100), currency: "ZAR",
-            successUrl: "https://book.capekayak.co.za/success?ref=" + sd.booking_id,
-            cancelUrl: "https://book.capekayak.co.za/cancelled",
-            failureUrl: "https://book.capekayak.co.za/cancelled",
+            successUrl: "https://booking-mu-steel.vercel.app/success?ref=" + sd.booking_id,
+            cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
+            failureUrl: "https://booking-mu-steel.vercel.app/cancelled",
             metadata: { booking_id: sd.booking_id, type: "ADD_PEOPLE" },
           }),
         });
@@ -2124,8 +2124,8 @@ async function handleMsg(phone: any, text: any, msgType: any, interactive?: any)
           method: "POST", headers: { Authorization: "Bearer " + YOCO_SECRET, "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: Math.round(splitAmount * 100), currency: "ZAR",
-            successUrl: "https://book.capekayak.co.za/success?ref=" + sd.booking_id,
-            cancelUrl: "https://book.capekayak.co.za/cancelled",
+            successUrl: "https://booking-mu-steel.vercel.app/success?ref=" + sd.booking_id,
+            cancelUrl: "https://booking-mu-steel.vercel.app/cancelled",
             metadata: { booking_id: sd.booking_id, type: "SPLIT_" + (spi + 1) + "_OF_" + splitCount },
           }),
         });

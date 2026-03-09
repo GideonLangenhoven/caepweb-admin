@@ -386,7 +386,7 @@ This section maps every hardcoded value that needs to become configurable for th
 |---------------|---------------|-----------------|
 | Yoco test key `sk_test_b1f890d6...` | Client's Yoco live key | env var per client |
 | AI system prompt (entire knowledge base) | Client's FAQ/knowledge base | `businesses` table `chat_prompt` field |
-| Success/cancel URLs `book.capekayak.co.za` | Client's booking domain | `businesses` table |
+| Success/cancel URLs `booking-mu-steel.vercel.app` | Client's booking domain | `businesses` table |
 | Group discount logic (6+ = 5%) | Client's policy settings | `policies` table |
 
 #### `wa-webhook/index.ts`
@@ -422,7 +422,7 @@ This section maps every hardcoded value that needs to become configurable for th
 #### `create-checkout/index.ts`
 | Current Value | What to Change | Suggested Source |
 |---------------|---------------|-----------------|
-| Success/cancel URLs `book.capekayak.co.za` | Client booking domain | `businesses` table |
+| Success/cancel URLs `booking-mu-steel.vercel.app` | Client booking domain | `businesses` table |
 | Currency `ZAR` | Client currency | `businesses` table |
 
 ### 8.2 Frontend — Hardcoded Values to Parameterise

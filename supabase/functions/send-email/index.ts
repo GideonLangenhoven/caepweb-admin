@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { PDFDocument, StandardFonts, rgb } from "npm:pdf-lib";
 
 const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY") || "";
-const EMAIL_FROM = Deno.env.get("EMAIL_FROM") || "Cape Kayak Adventures <bookings@capekayak.co.za>";
+const EMAIL_FROM = Deno.env.get("EMAIL_FROM") || "Cape Kayak Adventures <onboarding@resend.dev>";
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
