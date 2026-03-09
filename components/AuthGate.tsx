@@ -232,7 +232,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
             {error && <p className="mb-3 text-xs text-[var(--ck-danger)]">{error}</p>}
 
-            <button onClick={login} disabled={loading} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-white hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50">
+            <button onClick={login} disabled={loading} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50">
               {loading ? "Signing in..." : "Sign In"}
             </button>
 

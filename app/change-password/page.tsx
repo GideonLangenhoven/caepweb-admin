@@ -134,7 +134,7 @@ export default function ChangePasswordPage() {
         <div className="ui-surface-elevated w-full max-w-sm p-8 text-center">
           <h1 className="text-xl font-semibold tracking-tight text-[var(--ck-text-strong)] mb-3">Password Updated</h1>
           <p className="text-sm text-[var(--ck-text-muted)] mb-6">Your password has been changed successfully. You can now sign in with your new password.</p>
-          <a href="/" className="inline-block w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-white hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 text-center">
+          <a href="/" className="inline-block w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 text-center">
             Go to Dashboard
           </a>
         </div>
@@ -208,7 +208,7 @@ export default function ChangePasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-white hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50"
+            className="w-full rounded-xl bg-[var(--ck-text-strong)] py-3 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 disabled:opacity-50"
           >
             {loading ? "Updating..." : "Change Password"}
           </button>

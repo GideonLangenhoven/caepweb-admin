@@ -84,6 +84,8 @@ interface Booking {
   qty: number;
   total_amount: number;
   status: string;
+  source: string;
+  external_ref: string | null;
   refund_status: string | null;
   yoco_checkout_id: string | null;
   payment_deadline: string | null;
@@ -191,7 +193,7 @@ export default function Bookings() {
 
     const { data } = await supabase
       .from("bookings")
-      .select("id, slot_id, customer_name, phone, email, qty, total_amount, status, refund_status, yoco_checkout_id, payment_deadline, tours(id,name), slots(id,start_time,tour_id,capacity_total,booked,status)")
+      .select("id, slot_id, customer_name, phone, email, qty, total_amount, status, source, external_ref, refund_status, yoco_checkout_id, payment_deadline, tours(id,name), slots(id,start_time,tour_id,capacity_total,booked,status)")
       .eq("business_id", businessId)
       .in("slot_id", slotIds)
       .in("status", ["PAID", "CONFIRMED", "HELD", "PENDING", "PENDING PAYMENT", "COMPLETED", "CANCELLED"])
@@ -1237,7 +1239,13 @@ function SlotRows({
                     <span className="inline-block w-3 text-gray-400 transition-transform lg:hidden" style={{ transform: actionsOpen ? "rotate(90deg)" : "none" }}>›</span>
                     <span className="font-medium text-gray-700">{b.customer_name}</span>
                     <StatusBadge status={b.status} />
+                    <SourceBadge source={b.source} />
                   </button>
+                  {b.external_ref && (
+                    <span className="text-[10px] text-gray-400 font-mono lg:pl-0 pl-[18px]">
+                      Ref: {b.external_ref}
+                    </span>
+                  )}
                   {b.payment_deadline && !isPaid(b.status) && b.status !== "CANCELLED" && (
                     <span className={`text-[10px] font-medium lg:pl-0 pl-[18px] ${new Date(b.payment_deadline) < new Date() ? "text-red-600" : "text-amber-600"}`}>
                       {new Date(b.payment_deadline) < new Date()
@@ -1382,6 +1390,21 @@ function RefundBadge({ status }: { status: string | null }) {
     TRANSFERRED: "bg-emerald-100 text-emerald-700",
   };
   return <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-medium ${colors[status] || "bg-gray-100 text-gray-700"}`}>Refund {status}</span>;
+}
+
+function SourceBadge({ source }: { source: string }) {
+  if (!source || source === "WEB") return null;
+  const colors: Record<string, string> = {
+    VIATOR: "bg-violet-100 text-violet-700",
+    GETYOURGUIDE: "bg-orange-100 text-orange-700",
+    WHATSAPP: "bg-green-100 text-green-700",
+    ADMIN: "bg-blue-100 text-blue-700",
+  };
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold tracking-wide ${colors[source] || "bg-gray-100 text-gray-600"}`}>
+      {source}
+    </span>
+  );
 }
 
 function ActionMenuItem({

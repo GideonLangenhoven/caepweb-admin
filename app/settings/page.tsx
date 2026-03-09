@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { useBusinessContext } from "../../components/BusinessContext";
 import RichTextEditor from "../../components/RichTextEditor";
+import ExternalBookingSettings from "../../components/ExternalBookingSettings";
 import { fetchUsageSnapshot, type UsageSnapshot } from "../lib/billing";
 
 var BOOKING_URL = "https://capekayak-booking-sk1r.vercel.app";
@@ -496,7 +497,7 @@ export default function SettingsPage() {
                                         className="ui-control w-full px-3 py-2 text-sm rounded-lg outline-none" placeholder="Enter a secure password" />
                                 </div>
                                 {error && <div className="text-xs text-[var(--ck-danger)] font-medium">{error}</div>}
-                                <button type="submit" disabled={adding} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                                <button type="submit" disabled={adding} className="w-full rounded-xl bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:opacity-90 disabled:opacity-50">
                                     {adding ? "Adding..." : "Add Admin"}
                                 </button>
                             </>
@@ -701,7 +702,7 @@ export default function SettingsPage() {
 
                             <div className="flex gap-3">
                                 <button type="submit" disabled={tourSaving}
-                                    className="flex-1 rounded-xl bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                                    className="flex-1 rounded-xl bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:opacity-90 disabled:opacity-50">
                                     {tourSaving ? "Saving..." : editingTour ? "Update Tour" : "Add Tour"}
                                 </button>
                                 {editingTour && (
@@ -716,6 +717,10 @@ export default function SettingsPage() {
 
                 </div>
             </div>
+
+            {role === "MAIN_ADMIN" && (
+                <ExternalBookingSettings tours={tours.map((t) => ({ id: t.id, name: t.name }))} />
+            )}
 
             {/* ── Site Configuration ── */}
             <div className="mt-10 border-t border-[var(--ck-border-subtle)] pt-10 pb-20">
@@ -893,7 +898,14 @@ export default function SettingsPage() {
                                 "https://lottie.host/f88dfbd9-9fbb-43af-9ac4-400d4f0b96ae/tc9tMgAjqf.lottie",
                                 "https://lottie.host/b37e717c-85a0-4b3a-85ac-da0d0c21d0ce/6y2qqYBhTF.lottie",
                                 "https://lottie.host/e1aecbea-cf94-47e8-aae2-5f59c567c6d9/zHX4Roi2Eb.lottie",
-                                "https://lottie.host/deee1aa7-f9b1-4869-8191-b9dccacb0017/Inaq5Gmhwf.lottie"
+                                "https://lottie.host/deee1aa7-f9b1-4869-8191-b9dccacb0017/Inaq5Gmhwf.lottie",
+                                "https://lottie.host/b73fce61-6b44-489d-9692-f0a769da24a4/dhP4Oftcxd.lottie",
+                                "https://lottie.host/ec6b7394-d3cb-4e43-97b5-804cd66d76ad/QhsvIwZ3y8.lottie",
+                                "https://lottie.host/ff097c6d-c89a-4206-9b49-002cb4536da9/VHw4byv4mh.lottie",
+                                "https://lottie.host/4392b24a-4204-4e8d-9148-6744361410d6/c3f09SNsC0.lottie",
+                                "https://lottie.host/f69dd8f8-82b1-476d-b903-d8aa74eba356/o2oHgsa2mD.lottie",
+                                "https://lottie.host/0b80a0e1-bc90-4e40-9e0a-602afab059d1/HYkrm9Y0bN.lottie",
+                                "https://lottie.host/28fea83d-7e0e-442d-9146-02fb112a8116/uUo4UHGopv.lottie"
                             ].map(url => {
                                 const isSelected = siteSettings.chatbot_avatar === url;
                                 return (
@@ -920,7 +932,7 @@ export default function SettingsPage() {
                             )}
                         </div>
                         <button type="submit" disabled={siteSaving}
-                            className="rounded-xl px-8 bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                            className="rounded-xl px-8 bg-[var(--ck-text-strong)] py-2.5 text-sm font-semibold text-[var(--ck-btn-primary-text)] hover:opacity-90 disabled:opacity-50">
                             {siteSaving ? "Saving..." : "Save Site Settings"}
                         </button>
                     </div>
